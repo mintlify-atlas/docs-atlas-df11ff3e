@@ -1,0 +1,67 @@
+---
+title: "Authentication"
+description: "Authenticate your API requests using Sealos JWT tokens."
+---
+
+## Overview
+
+The Sealos Account API uses JWT (JSON Web Tokens) for authentication. Every request must include a valid token in the `Authorization` header. Tokens are issued by the Sealos platform when you sign in and encode your user identity and the region you authenticated against.
+
+## Getting a token
+
+Tokens are obtained through the Sealos desktop or settings UI — they are not issued directly by the Account API itself.
+
+1. Sign in to the Sealos desktop at your region's URL (e.g. `https://cloud.sealos.io`).
+2. Open **Settings** from the user menu in the top-right corner.
+3. Navigate to the **API tokens** or **Access keys** section.
+4. Copy the token displayed there, or generate a new one.
+
+<Note>
+The exact location of the token in the UI may vary between Sealos versions. If you cannot find it in Settings, check the user profile panel on the desktop.
+</Note>
+
+## Passing the token in requests
+
+Include the token as a Bearer token in the `Authorization` header of every request:
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/account \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+The server extracts the user identity from the token automatically. You do not need to include user IDs or owner names in the request body.
+
+## Token expiry and refresh
+
+Tokens have a finite lifetime. When a token expires, requests return `401 Unauthorized`. To continue making API calls you must obtain a new token by signing in again through the Sealos desktop.
+
+There is no token refresh endpoint exposed by the Account API. Token lifecycle management is handled entirely by the Sealos authentication layer.
+
+## Understanding 401 and 403 responses
+
+**`401 Unauthorized`** means the request could not be authenticated:
+
+- The `Authorization` header is missing.
+- The token is malformed or has an invalid signature.
+- The token has expired.
+- The user referenced in the token does not exist in the current region's database.
+
+```json
+{
+  "error": "authenticate error: failed to parse user: ..."
+}
+```
+
+**`403 Forbidden`** means the request was authenticated but the operation is not permitted. This occurs on invoice endpoints when no eligible payments exist for the requested operation:
+
+```json
+{
+  "error": "no payment can be applied to the invoice"
+}
+```
+
+<Warning>
+Never share your token or commit it to source control. Tokens grant full access to your account's billing and cost data.
+</Warning>

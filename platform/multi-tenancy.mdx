@@ -1,0 +1,189 @@
+---
+title: "Multi-tenancy and access control"
+description: "Manage teams, roles, and resource isolation across multiple workspaces."
+---
+
+Sealos is built for enterprise multi-tenancy from the ground up. Every workspace maps to a Kubernetes namespace, and the platform enforces hard isolation boundaries between workspaces at the infrastructure level. Teams can collaborate within a workspace while remaining completely isolated from other teams, projects, or environments.
+
+## Workspace-based isolation model
+
+Each workspace (namespace) operates as an independent security and resource boundary:
+
+- **Network isolation** — traffic between namespaces is restricted by default. Workloads in one workspace cannot reach another workspace's services without explicit configuration.
+- **Resource isolation** — CPU, memory, storage, and network quotas are enforced per workspace using Kubernetes `ResourceQuota` objects. One workspace exhausting its quota does not affect other workspaces.
+- **Billing isolation** — cost records are tracked per namespace, so you get precise visibility into how much each team or environment spends.
+- **Access isolation** — workspace membership is controlled independently. A user can be an Owner of one workspace and a Developer in another.
+
+Under the hood, access control is implemented using Sealos custom resources: `User`, `UserGroup`, `UserGroupBinding`, and `OperationRequest`. These CRDs are reconciled by the user controller and map directly to Kubernetes RBAC role bindings.
+
+## Role-based access control (RBAC)
+
+Every member of a workspace holds one of three roles:
+
+<CardGroup cols={3}>
+  <Card title="Owner" icon="crown">
+    Complete administrative control. Can add and remove any member, change subscription plans, and delete the workspace. Exactly one Owner per workspace at any time.
+  </Card>
+  <Card title="Manager" icon="user-tie">
+    Operational control. Can deploy applications, manage databases, and invite Developer-level members. Cannot delete the workspace or transfer ownership.
+  </Card>
+  <Card title="Developer" icon="code">
+    Deployment access. Can create and manage their own resources within the workspace but cannot change workspace membership or settings.
+  </Card>
+</CardGroup>
+
+These roles are enforced through `UserGroupBinding` resources. When a user is granted a role, the controller creates a `UserGroupBinding` linking the user to the workspace namespace with the specified `roleRef` (`owner`, `manager`, or `user`). Revoking a role removes the binding.
+
+### How role changes are processed
+
+Access changes go through an `OperationRequest` custom resource, which provides an auditable, asynchronous workflow:
+
+```yaml
+apiVersion: user.sealos.io/v1
+kind: OperationRequest
+metadata:
+  name: grant-developer-alice
+spec:
+  namespace: ns-my-workspace
+  user: alice-uid
+  role: Developer
+  action: Grant
+```
+
+The controller processes the request and transitions it through `Pending` → `Processing` → `Completed` (or `Failed`). Supported actions are `Grant`, `Update`, and `Deprive`.
+
+## Granting and revoking workspace access
+
+### Granting access
+
+<Steps>
+  <Step title="Open workspace settings">
+    In the Sealos desktop, click the gear icon next to the workspace in the workspace switcher dropdown.
+  </Step>
+  <Step title="Navigate to the Members tab">
+    Select **Members** to see the current membership list with each person's role.
+  </Step>
+  <Step title="Invite a new member">
+    Click **Invite Member**, enter the user's Sealos username or registered email, and choose a role (Owner, Manager, or Developer).
+  </Step>
+  <Step title="Confirm">
+    Submit the invitation. An `OperationRequest` with `action: Grant` is created automatically. The invitee receives a notification and can accept from their own desktop.
+  </Step>
+</Steps>
+
+### Changing an existing member's role
+
+<Steps>
+  <Step title="Find the member">
+    In the **Members** tab, locate the member whose role you want to update.
+  </Step>
+  <Step title="Select a new role">
+    Use the role dropdown next to their name to select Owner, Manager, or Developer. Confirm the change.
+  </Step>
+</Steps>
+
+This creates an `OperationRequest` with `action: Update`.
+
+### Revoking access
+
+To remove a member from a workspace, click the remove icon next to their name in the **Members** tab and confirm. Sealos creates an `OperationRequest` with `action: Deprive`. Once processed, the user's role bindings to the workspace namespace are removed and they can no longer access the workspace or any resources inside it.
+
+<Warning>
+  Revoking access takes effect once the controller processes the OperationRequest. Running workloads owned by the removed user are not automatically deleted, but the user can no longer manage or connect to them.
+</Warning>
+
+## Resource quotas per workspace
+
+Resource quotas are configured at the workspace level to prevent any single team or project from over-consuming shared cluster capacity.
+
+Each workspace subscription plan defines limits on:
+
+| Resource | Unit |
+|----------|------|
+| CPU | vCPU cores |
+| Memory | GiB |
+| Persistent storage | GiB |
+| Network egress | GiB per billing period |
+
+You can query the current resource quota for any workspace you have access to from Cost Center. When a workspace approaches its quota, Sealos prevents new resource requests from exceeding the limit. Upgrading the workspace subscription plan raises the quota immediately.
+
+<Tip>
+  Assign workspace subscription plans that match the expected workload profile for each environment. A production workspace typically needs a higher plan tier than a development workspace running the same application at lower scale.
+</Tip>
+
+When a workspace's network traffic allowance is exhausted, outbound network access is suspended automatically. Traffic resumes as soon as a new traffic package is added — either by renewing or upgrading the subscription plan, or by purchasing an add-on package.
+
+## Audit and visibility across workspaces
+
+### Cross-workspace cost visibility
+
+The Cost Center **Workspace Consumption** view aggregates spending across all workspaces you own or manage. You can compare consumption between workspaces over any custom date range and see which namespaces are driving the most cost across all regions.
+
+For multi-region deployments, the **All-Region Consumption** view consolidates usage from every region into a single report, making it straightforward to understand your total cloud spend regardless of where workloads run.
+
+### Access history
+
+Every `OperationRequest` is a persistent Kubernetes resource with a creation timestamp, processing status, and the acting user's identity captured in the `user.sealos.io/creator` annotation. You can review the history of access changes for any workspace by listing OperationRequest objects in the relevant namespace.
+
+### Billing records per workspace
+
+Every charge is associated with a specific workspace (namespace), app name, and app type. Cost Center lets you filter billing history by any combination of these dimensions and export results for external reporting or compliance purposes.
+
+## Best practices for team organization
+
+<Accordion title="Use separate workspaces for dev, staging, and production">
+  Running each environment in its own workspace enforces strict resource and cost separation. A bug or runaway workload in `dev` cannot affect the production workspace's quota or budget. It also makes it easy to grant developers full Manager access to `dev` while restricting them to Developer-only access in `production`.
+</Accordion>
+
+<Accordion title="Assign the minimum necessary role">
+  Follow the principle of least privilege. Most contributors only need the Developer role. Reserve Manager for team leads who need to manage the full workload lifecycle, and Owner only for the person responsible for billing and workspace administration.
+</Accordion>
+
+<Accordion title="Use one workspace per project or team">
+  When multiple projects share a workspace, cost attribution becomes ambiguous and a misconfigured deployment in one project can consume quota intended for another. Separate workspaces make ownership, cost accountability, and access control unambiguous.
+</Accordion>
+
+<Accordion title="Set subscription plans before deploying production workloads">
+  Choose a workspace subscription plan that comfortably covers your peak resource requirements before you go live. Trying to upgrade a plan while a production workspace is under load can cause brief delays in quota reconciliation.
+</Accordion>
+
+<Accordion title="Monitor balance and set budget alerts for every production workspace">
+  Configure spending alert notifications for each production workspace so your team is notified before the balance drops to a level that would trigger resource suspension. See the [billing documentation](/platform/billing) for steps on setting up alert notifications.
+</Accordion>
+
+## Kubernetes-level isolation reference
+
+For advanced users and platform operators, the underlying Kubernetes objects that implement workspace isolation are:
+
+```yaml
+# Each user gets a User CRD
+apiVersion: user.sealos.io/v1
+kind: User
+metadata:
+  name: <user-uid>
+spec:
+  displayName: <display-name>
+
+---
+# A UserGroup is created per user and serves as the membership container
+apiVersion: user.sealos.io/v1
+kind: UserGroup
+metadata:
+  name: ug-<user-uid>
+  annotations:
+    user.sealos.io/creator: <user-uid>
+
+---
+# UserGroupBindings link users and namespaces to a UserGroup with a role
+apiVersion: user.sealos.io/v1
+kind: UserGroupBinding
+metadata:
+  name: ugn-<user-uid>
+roleRef: manager          # owner | manager | user
+subject:
+  kind: Namespace
+  name: ns-<workspace>
+userGroupRef: ug-<user-uid>
+```
+
+These resources are managed automatically by Sealos. Direct manipulation is only necessary for platform administrators performing bulk migrations or custom integrations.

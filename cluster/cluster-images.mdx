@@ -1,0 +1,257 @@
+---
+title: "Cluster images"
+description: "Package and distribute Kubernetes applications as OCI-compatible cluster images."
+---
+
+Cluster images are the packaging format at the heart of Sealos. They let you bundle a Kubernetes distribution, CNI plugin, Helm chart, manifests, and any arbitrary script into a single versioned artifact that can be stored in any OCI-compatible registry and installed with a single command.
+
+## What is a cluster image?
+
+A cluster image is an OCI-compatible container image that carries Kubernetes application payloads rather than a runnable process. It uses the same layer-and-manifest format as a standard Docker image, which means it works with any OCI registry (Docker Hub, GitHub Container Registry, a private Harbor instance, etc.).
+
+Cluster images are built using **Buildah** — the same engine that powers `podman build`. Sealos ships Buildah as part of its binary, so no external toolchain is required.
+
+<CardGroup cols={2}>
+  <Card title="OCI-compatible" icon="box">
+    Store, pull, and push cluster images using any OCI-compliant registry. No custom storage back-end required.
+  </Card>
+  <Card title="Fully offline" icon="plug">
+    Bundle container images, Helm charts, and binaries inside the cluster image for air-gapped installation.
+  </Card>
+  <Card title="Composable" icon="layer-group">
+    Stack multiple cluster images in a single `sealos run` command. Each image installs one component.
+  </Card>
+  <Card title="Versioned" icon="tag">
+    Tag images just like Docker images. Roll back by installing an earlier tag.
+  </Card>
+</CardGroup>
+
+---
+
+## The Sealfile format
+
+A `Sealfile` (also accepted as `Kubefile`, `Dockerfile`, or `Containerfile`) is the instruction file used to build a cluster image. The syntax is a superset of Dockerfile syntax, with the same directives (`FROM`, `COPY`, `CMD`, `ENV`, `ARG`, `RUN`).
+
+The key difference is in what `CMD` means: instead of defining a process entrypoint, `CMD` lists shell commands that are executed **on the cluster nodes** during installation.
+
+### Sealfile directives
+
+| Directive | Purpose |
+|-----------|---------|
+| `FROM` | Base cluster image (use `scratch` for a self-contained image) |
+| `COPY` | Copy files from the build context into the image layer |
+| `CMD` | Commands run on nodes when the image is installed via `sealos run` |
+| `ENV` | Environment variables available in `CMD` instructions |
+| `ARG` | Build-time variables passed with `--build-arg` |
+| `RUN` | Commands executed during the **build** phase (not on nodes) |
+
+### Minimal example
+
+```dockerfile
+FROM scratch
+COPY manifests ./manifests
+COPY registry ./registry
+CMD ["kubectl apply -f manifests/deploy.yaml"]
+```
+
+### Full application example
+
+The following Sealfile packages a Kubernetes distribution with Flannel networking and MySQL, then installs both with Helm:
+
+```dockerfile
+FROM labring/kubernetes:v1.25.0
+COPY flannel-chart ./flannel-chart
+COPY mysql-chart   ./mysql-chart
+CMD ["helm install flannel flannel-chart --namespace kube-system", \
+     "helm install mysql mysql-chart --namespace default"]
+```
+
+### Offline image bundle
+
+Cluster images can embed an offline container image registry. Place pre-pulled images under a `registry/` directory in your build context and they will be loaded into the on-cluster registry during installation:
+
+```dockerfile
+FROM scratch
+COPY registry ./registry
+COPY manifests ./manifests
+CMD ["kubectl apply -f manifests/"]
+```
+
+---
+
+## Building a cluster image
+
+<Steps>
+  <Step title="Create a build context directory">
+    Organise your files — charts, manifests, pre-pulled images — inside a directory:
+
+    ```bash
+    mkdir my-app && cd my-app
+    ```
+  </Step>
+
+  <Step title="Write a Sealfile">
+    Create a `Sealfile` in the directory:
+
+    ```dockerfile
+    FROM scratch
+    COPY manifests ./manifests
+    CMD ["kubectl apply -f manifests/my-app.yaml"]
+    ```
+  </Step>
+
+  <Step title="Build the image">
+    Run `sealos build` from the context directory:
+
+    ```bash
+    sealos build -t my-app:v1.0.0 .
+    ```
+
+    For multi-architecture images:
+
+    ```bash
+    sealos build \
+      -t my-app:v1.0.0 \
+      --platform linux/amd64,linux/arm64 \
+      .
+    ```
+  </Step>
+
+  <Step title="Verify the image">
+    List locally built images:
+
+    ```bash
+    sealos images
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Publishing to a registry
+
+Once the image is built, push it to any OCI registry the same way you would push a Docker image.
+
+```bash
+# Log in (if required)
+sealos login registry.example.com -u myuser -p mypassword
+
+# Tag for your registry
+sealos tag my-app:v1.0.0 registry.example.com/myorg/my-app:v1.0.0
+
+# Push
+sealos push registry.example.com/myorg/my-app:v1.0.0
+```
+
+To publish to Docker Hub:
+
+```bash
+sealos login docker.io -u mydockerhubuser -p mytoken
+sealos push mydockerhubuser/my-app:v1.0.0
+```
+
+---
+
+## Official cluster images
+
+The `labring` organisation on Docker Hub publishes ready-to-use cluster images for common Kubernetes components.
+
+<CardGroup cols={2}>
+  <Card title="labring/kubernetes" icon="dharmachakra">
+    Core Kubernetes distribution. Tags follow the pattern `v{k8s-version}-{sealos-version}`, e.g. `labring/kubernetes:v1.25.0-4.2.0`.
+  </Card>
+  <Card title="labring/calico" icon="network-wired">
+    Calico CNI plugin. Example: `labring/calico:v3.24.1`.
+  </Card>
+  <Card title="labring/helm" icon="package">
+    Helm package manager. Example: `labring/helm:v3.8.2`.
+  </Card>
+  <Card title="labring/mysql-operator" icon="database">
+    MySQL Operator for Kubernetes. Example: `labring/mysql-operator:8.0.23-14.1`.
+  </Card>
+  <Card title="labring/redis-operator" icon="database">
+    Redis Operator. Example: `labring/redis-operator:3.1.4`.
+  </Card>
+  <Card title="labring/clickhouse" icon="database">
+    ClickHouse cluster. Example: `labring/clickhouse:0.18.4`.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Browse all official images at the `labring` namespace on Docker Hub. Tags are
+  immutable — pin to a specific tag in production to guarantee reproducible
+  deployments.
+</Tip>
+
+---
+
+## Combining multiple cluster images
+
+You can pass multiple cluster images to a single `sealos run` invocation. Sealos installs them in order, left to right. Each image runs its `CMD` instructions on the cluster after the previous image completes.
+
+```bash
+sealos run \
+  labring/kubernetes:v1.25.0-4.2.0 \
+  labring/helm:v3.8.2 \
+  labring/calico:v3.24.1 \
+  --masters 192.168.0.2,192.168.0.3,192.168.0.4 \
+  --nodes 192.168.0.5,192.168.0.6,192.168.0.7 \
+  --passwd 'your-ssh-password'
+```
+
+You can also layer images at build time using `FROM` to produce a single composite image:
+
+```dockerfile
+FROM labring/kubernetes:v1.25.0
+COPY flannel-chart ./flannel-chart
+COPY mysql-chart   ./mysql-chart
+CMD ["helm install flannel flannel-chart", "helm install mysql mysql-chart"]
+```
+
+```bash
+sealos build -t my-kubernetes:v1.25.0 .
+sealos run my-kubernetes:v1.25.0 \
+  --masters 192.168.0.2,192.168.0.3,192.168.0.4 \
+  --nodes 192.168.0.5,192.168.0.6,192.168.0.7
+```
+
+---
+
+## Offline installation
+
+Cluster images support completely air-gapped environments. The workflow is:
+
+<Steps>
+  <Step title="Pull images on a machine with internet access">
+    ```bash
+    sealos pull labring/kubernetes:v1.25.0-4.2.0
+    sealos pull labring/calico:v3.24.1
+    ```
+  </Step>
+
+  <Step title="Save images to tar archives">
+    ```bash
+    sealos save -o kubernetes.tar labring/kubernetes:v1.25.0-4.2.0
+    sealos save -o calico.tar labring/calico:v3.24.1
+    ```
+  </Step>
+
+  <Step title="Transfer archives to the air-gapped environment">
+    Use any available transfer mechanism — USB, SCP to a jump host, object storage.
+  </Step>
+
+  <Step title="Load and run on the air-gapped hosts">
+    ```bash
+    sealos run kubernetes.tar calico.tar \
+      --masters 192.168.0.2,192.168.0.3,192.168.0.4 \
+      --nodes 192.168.0.5,192.168.0.6,192.168.0.7 \
+      --passwd 'your-ssh-password'
+    ```
+
+    The `--transport` flag controls the archive format. Default is `oci-archive`; set `--transport docker-archive` if you saved with Docker's `docker save` command.
+  </Step>
+</Steps>
+
+<Note>
+  ARM64 is supported from Kubernetes v1.20 onwards. Use the `--platform linux/arm64` flag when building images for ARM clusters.
+</Note>

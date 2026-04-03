@@ -1,0 +1,342 @@
+---
+title: "Account"
+description: "Retrieve account balance, regions, and permission information."
+---
+
+## Get account
+
+Returns the current user's account record, including balance and deduction balance.
+
+**`POST /account/v1alpha1/account`**
+
+The request body only needs to carry authentication context, which is derived automatically from the JWT. An empty JSON object `{}` is sufficient.
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/account \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+### Example response
+
+```json
+{
+  "account": {
+    "userUID": "550e8400-e29b-41d4-a716-446655440000",
+    "balance": 5000000,
+    "deductionBalance": 1200000,
+    "activityBonus": 0,
+    "encryptBalance": "<encrypted>",
+    "encryptDeductionBalance": "<encrypted>"
+  }
+}
+```
+
+<ResponseField name="account" type="object">
+  The account record for the authenticated user.
+
+  <Expandable title="account fields">
+    <ResponseField name="userUID" type="string">
+      Immutable UUID identifying the user.
+    </ResponseField>
+    <ResponseField name="balance" type="integer">
+      Total credits loaded into the account, in the platform's smallest monetary unit.
+    </ResponseField>
+    <ResponseField name="deductionBalance" type="integer">
+      Total credits consumed so far, in the platform's smallest monetary unit.
+    </ResponseField>
+    <ResponseField name="activityBonus" type="integer">
+      Promotional credits applied to the account.
+    </ResponseField>
+    <ResponseField name="encryptBalance" type="string">
+      Encrypted representation of the balance for tamper detection.
+    </ResponseField>
+    <ResponseField name="encryptDeductionBalance" type="string">
+      Encrypted representation of the deduction balance.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get regions
+
+Returns the list of Sealos regions configured for this deployment.
+
+**`POST /account/v1alpha1/regions`**
+
+No request body fields are required beyond the JWT in the header.
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/regions \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+### Example response
+
+```json
+{
+  "regions": [
+    {
+      "uid": "region-uuid-1",
+      "domain": "us-west.cloud.sealos.io",
+      "accountSvc": "account.us-west.svc",
+      "description": "US West"
+    }
+  ]
+}
+```
+
+<ResponseField name="regions" type="array">
+  List of all configured regions.
+
+  <Expandable title="region fields">
+    <ResponseField name="uid" type="string">
+      Unique identifier for the region.
+    </ResponseField>
+    <ResponseField name="domain" type="string">
+      Public domain for this region.
+    </ResponseField>
+    <ResponseField name="accountSvc" type="string">
+      Internal service hostname for the account service in this region.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Human-readable region name.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Check permission
+
+Validates the caller's JWT and returns the resolved `userID`. Use this endpoint to confirm that a token is valid and to retrieve the canonical user ID before making other requests.
+
+**`POST /account/v1alpha1/check-permission`**
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/check-permission \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+### Example response
+
+```json
+{
+  "userID": "admin",
+  "message": "successfully check permission"
+}
+```
+
+<ResponseField name="userID" type="string">
+  The user ID resolved from the JWT.
+</ResponseField>
+<ResponseField name="message" type="string">
+  Confirmation string: `"successfully check permission"`.
+</ResponseField>
+
+---
+
+## Get billing history namespaces
+
+Returns a list of Kubernetes namespaces for which billing records exist within a given time range.
+
+**`POST /account/v1alpha1/namespaces`**
+
+<ParamField body="startTime" type="string" required>
+  Start of the time range in ISO 8601 format. Example: `"2024-01-01T00:00:00Z"`
+</ParamField>
+
+<ParamField body="endTime" type="string" required>
+  End of the time range in ISO 8601 format. Example: `"2024-06-01T00:00:00Z"`
+</ParamField>
+
+<ParamField body="type" type="integer">
+  Optional filter type. Defaults to `0` (all).
+</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/namespaces \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "startTime": "2024-01-01T00:00:00Z",
+    "endTime": "2024-06-01T00:00:00Z"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "list": ["ns-admin", "ns-testuser1", "ns-dev"]
+  }
+}
+```
+
+<ResponseField name="data" type="object">
+  <Expandable title="data fields">
+    <ResponseField name="list" type="array of strings">
+      Namespace names that have billing activity in the requested period.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get user real name info
+
+Returns whether the authenticated user has completed real-name verification.
+
+**`POST /account/v1alpha1/real-name-info`**
+
+No request body fields are required beyond the JWT.
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/real-name-info \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "userID": "admin",
+    "isRealName": true
+  },
+  "message": "successfully get user real name info"
+}
+```
+
+<ResponseField name="data" type="object">
+  <Expandable title="data fields">
+    <ResponseField name="userID" type="string">
+      The user's ID.
+    </ResponseField>
+    <ResponseField name="isRealName" type="boolean">
+      `true` if the user has completed real-name verification (personal or enterprise), `false` otherwise.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="message" type="string">
+  A human-readable status message.
+</ResponseField>
+
+---
+
+## Get recharge discount
+
+Returns the recharge discount tiers configured for the platform, including first-recharge discount steps.
+
+**`POST /account/v1alpha1/recharge-discount`**
+
+No request body fields are required beyond the JWT.
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/recharge-discount \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+### Example response
+
+```json
+{
+  "discount": {
+    "defaultSteps": {
+      "1000000": 0,
+      "10000000": 5,
+      "100000000": 10
+    },
+    "firstRechargeDiscount": {
+      "1000000": 10,
+      "10000000": 20
+    }
+  }
+}
+```
+
+<ResponseField name="discount" type="object">
+  <Expandable title="discount fields">
+    <ResponseField name="defaultSteps" type="object">
+      Map of recharge amount (in smallest monetary unit) to discount percentage for regular recharges.
+    </ResponseField>
+    <ResponseField name="firstRechargeDiscount" type="object">
+      Map of recharge amount to discount percentage applied only on the user's first recharge.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get properties
+
+Returns the list of billable resource property types defined for this region (CPU, memory, storage, etc.).
+
+**`POST /account/v1alpha1/properties`**
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/properties \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "properties": [
+      { "name": "cpu",    "unit": "Core",   "unitPrice": 67 },
+      { "name": "memory", "unit": "GiB",    "unitPrice": 33 },
+      { "name": "disk",   "unit": "GiB",    "unitPrice": 10 }
+    ]
+  },
+  "message": "successfully retrieved properties"
+}
+```
+
+<ResponseField name="data" type="object">
+  <Expandable title="data fields">
+    <ResponseField name="properties" type="array">
+      List of resource property definitions.
+
+      <Expandable title="property fields">
+        <ResponseField name="name" type="string">
+          Property name (e.g. `"cpu"`, `"memory"`, `"disk"`).
+        </ResponseField>
+        <ResponseField name="unit" type="string">
+          Unit of measurement.
+        </ResponseField>
+        <ResponseField name="unitPrice" type="integer">
+          Price per unit per billing cycle, in the platform's smallest monetary unit.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>

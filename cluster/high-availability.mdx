@@ -1,0 +1,210 @@
+---
+title: "High availability"
+description: "Deploy production-grade highly available Kubernetes clusters with Sealos."
+---
+
+Sealos delivers high availability without external dependencies. There is no HAProxy to configure, no Keepalived daemon to manage, and no Ansible playbook to maintain — the HA load balancer is built directly into each node using IPVS.
+
+## HA architecture overview
+
+```
+                          ┌─────────────────────────────────────────┐
+                          │              Worker Nodes               │
+                          │  ┌──────────┐  ┌──────────┐            │
+                          │  │  Node 1  │  │  Node 2  │   ...      │
+                          │  │  lvscare │  │  lvscare │            │
+                          │  └────┬─────┘  └────┬─────┘            │
+                          └───────┼─────────────┼──────────────────┘
+                                  │  Local VIP  │
+                                  └──────┬──────┘
+                                         │  IPVS
+                          ┌──────────────▼──────────────────────────┐
+                          │           Control Plane                 │
+                          │  ┌────────┐ ┌────────┐ ┌────────┐      │
+                          │  │Master 1│ │Master 2│ │Master 3│      │
+                          │  │:6443   │ │:6443   │ │:6443   │      │
+                          │  └────────┘ └────────┘ └────────┘      │
+                          │       etcd cluster (3 members)         │
+                          └─────────────────────────────────────────┘
+```
+
+### How lvscare works
+
+Sealos uses **lvscare** — a lightweight IPVS-based local load balancer — instead of an external load balancer or a VIP managed by Keepalived. Each node runs lvscare as a static pod. It listens on a local virtual IP and distributes API server traffic across all healthy master nodes using IPVS rules.
+
+Key properties of this approach:
+
+- **No external infrastructure.** The load balancer lives on every node alongside the workload.
+- **Low resource consumption.** IPVS operates in-kernel, identical to how kube-proxy works for Service load balancing.
+- **Automatic failover.** lvscare continuously health-checks the master nodes and removes unhealthy endpoints from the IPVS rule set.
+- **Single binary.** lvscare is embedded in the Sealos binary — nothing extra to install.
+
+---
+
+## Minimum hardware requirements
+
+<CardGroup cols={2}>
+  <Card title="Master nodes (×3 minimum)" icon="server">
+    - CPU: 2 cores
+    - RAM: 4 GB
+    - Disk: 50 GB (SSD recommended for etcd)
+    - Network: 1 Gbps
+  </Card>
+  <Card title="Worker nodes" icon="server">
+    - CPU: 2 cores (scale with workload)
+    - RAM: 4 GB (scale with workload)
+    - Disk: 50 GB
+    - Network: 1 Gbps
+  </Card>
+</CardGroup>
+
+<Note>
+  Three masters is the minimum for HA because etcd requires a quorum majority.
+  With three members, the cluster tolerates one master failure. Five masters
+  tolerate two simultaneous failures.
+</Note>
+
+**Additional requirements for all nodes:**
+
+- Linux with systemd (x86\_64 or ARM64)
+- SSH access from the machine running `sealos`
+- All nodes must be able to reach each other on the network
+- Ports 6443 (API server), 2379–2380 (etcd), and 10250 (kubelet) must not be blocked by a firewall between nodes
+
+---
+
+## Deploy a highly available cluster
+
+<Steps>
+  <Step title="Install the sealos binary">
+    Download and install sealos on the machine you'll use to manage the cluster (does not need to be a cluster node):
+
+    ```bash
+    curl -sfL https://raw.githubusercontent.com/labring/sealos/v4.3.0/scripts/install.sh \
+      | sh -s v4.3.0 labring/sealos
+    ```
+  </Step>
+
+  <Step title="Run sealos run with three masters">
+    Pass three master IPs and any number of worker IPs. Sealos bootstraps the control plane, sets up etcd, configures lvscare on all nodes, and installs the CNI:
+
+    ```bash
+    sealos run labring/kubernetes:v1.25.0-4.2.0 labring/helm:v3.8.2 labring/calico:v3.24.1 \
+      --masters 192.168.64.2,192.168.64.22,192.168.64.20 \
+      --nodes 192.168.64.21,192.168.64.19 \
+      --passwd 'your-ssh-password'
+    ```
+
+    What Sealos does during this process:
+
+    - Copies the required binaries and container images to every node
+    - Initialises the first master with `kubeadm init`
+    - Joins the remaining masters into the etcd cluster
+    - Configures lvscare on every node to load-balance the API server
+    - Joins each worker node
+    - Runs the `CMD` scripts from each cluster image (Helm, Calico, etc.)
+  </Step>
+
+  <Step title="Verify the cluster">
+    ```bash
+    sealos exec "kubectl get nodes -o wide"
+    ```
+
+    All three masters and both workers should show `Ready`.
+
+    ```bash
+    sealos status
+    ```
+
+    The status command runs a full suite of health checks and reports the result for each component.
+  </Step>
+</Steps>
+
+---
+
+## Add masters to an existing cluster
+
+If you started with a single-master cluster and want to convert it to HA, use `sealos add`:
+
+```bash
+# Promote two new machines to masters
+sealos add --masters 192.168.64.22,192.168.64.20
+```
+
+Sealos joins each new master into the existing etcd cluster and updates the lvscare rules on all nodes automatically.
+
+<Warning>
+  Adding a master changes the quorum of the etcd cluster. Add masters in odd
+  numbers (1 → 3 → 5) to maintain quorum tolerance.
+</Warning>
+
+---
+
+## etcd considerations
+
+etcd is the single source of truth for all cluster state. In a Sealos HA cluster:
+
+- etcd runs as a static pod on each master node, managed by kubelet
+- All members form a single etcd cluster; there is no external etcd option in the default setup
+- etcd data lives at `/var/lib/etcd` on each master
+
+**Performance recommendations:**
+
+- Use SSDs for the etcd data directory — etcd is sensitive to write latency
+- Place masters in the same data centre (or availability zone) to minimise round-trip time between etcd peers
+- Do not co-locate high-I/O workloads with master nodes
+
+**Backup etcd regularly:**
+
+```bash
+# Take a snapshot from any master
+sealos exec -r master \
+  "etcdctl snapshot save /tmp/etcd-snapshot.db \
+     --endpoints=https://127.0.0.1:2379 \
+     --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+     --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \
+     --key=/etc/kubernetes/pki/etcd/healthcheck-client.key"
+```
+
+---
+
+## Health checking and failover
+
+### Manual health check
+
+```bash
+# Check node status
+sealos exec -r master "kubectl get nodes"
+
+# Check etcd member health
+sealos exec -r master \
+  "etcdctl member list \
+     --endpoints=https://127.0.0.1:2379 \
+     --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+     --cert=/etc/kubernetes/pki/etcd/etcd-healthcheck-client.crt \
+     --key=/etc/kubernetes/pki/etcd/etcd-healthcheck-client.key"
+
+# Check API server on all masters
+sealos exec -r master "curl -sk https://localhost:6443/healthz"
+```
+
+### Automatic failover
+
+lvscare monitors the API server endpoint on each master and removes it from the IPVS rule set when the health check fails. Worker nodes continue to reach the API server through the remaining healthy masters without any manual intervention. When the failed master recovers, lvscare re-adds it automatically.
+
+### Replacing a failed master
+
+If a master node is permanently lost:
+
+```bash
+# Remove the dead master from the cluster
+sealos delete --masters 192.168.64.20
+
+# Add a replacement master
+sealos add --masters 192.168.64.30
+```
+
+<Tip>
+  Run `sealos status` after adding the replacement master to confirm all health
+  checks pass before considering the remediation complete.
+</Tip>

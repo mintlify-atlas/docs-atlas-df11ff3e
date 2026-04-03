@@ -1,0 +1,150 @@
+---
+title: "Core concepts"
+description: "Understand the key abstractions in Sealos before you start building."
+---
+
+Sealos is an AI-native Cloud Operating System built on Kubernetes. It wraps Kubernetes primitives — namespaces, deployments, ingresses, persistent volumes — into higher-level abstractions that are faster to reason about and easier to operate. This page explains those abstractions.
+
+<CardGroup cols={2}>
+  <Card title="Workspaces" icon="building" href="/platform/workspaces">
+    Isolated namespaces for individuals and teams, each with its own members, quotas, and billing.
+  </Card>
+  <Card title="Regions" icon="globe" href="/platform/workspaces">
+    Geographic deployment zones. Choose a region to control where your workloads run.
+  </Card>
+  <Card title="App Launchpad" icon="rocket" href="/features/app-launchpad">
+    Deploy any Docker image to a production-ready endpoint without writing Kubernetes YAML.
+  </Card>
+  <Card title="DevBox" icon="code" href="/features/devbox">
+    Cloud development environments accessible from VS Code, Cursor, or any SSH-capable IDE.
+  </Card>
+  <Card title="Cluster images" icon="layers" href="/cluster/cluster-images">
+    OCI-compatible images that bundle a full Kubernetes application stack for repeatable installs.
+  </Card>
+  <Card title="Cost Center" icon="credit-card" href="/platform/billing">
+    Usage-based billing with per-resource cost tracking across CPU, memory, storage, and network.
+  </Card>
+</CardGroup>
+
+---
+
+## Workspaces
+
+A workspace is an isolated Kubernetes namespace with its own members, resource quotas, and billing. Every Sealos account starts with a personal workspace. You can create additional team workspaces to separate projects or environments.
+
+Workspaces enforce multi-tenancy at the Kubernetes level: resources in one workspace cannot access resources in another by default. You invite teammates by email or username, and you assign each member a role — **Owner**, **Manager**, or **Developer** — that controls what they can create, modify, and delete.
+
+<Note>
+  Sealos supports up to 50 workspaces per account and up to 50 members per workspace by default. Operators can change these limits during platform configuration.
+</Note>
+
+## Regions
+
+A region is a geographic deployment zone — a distinct Sealos cluster running in a specific data center location. When you sign in to Sealos, you connect to a region. Your workspaces, apps, and databases all exist within that region.
+
+Choose a region based on where your users are located or where your data residency requirements point. Resources are not automatically replicated across regions; you manage cross-region deployments explicitly.
+
+<Tip>
+  Check the Sealos console for the current list of available regions. The default public cloud region is `cloud.sealos.run`.
+</Tip>
+
+## App Launchpad
+
+App Launchpad is Sealos's deployment abstraction over Kubernetes Deployments and Ingresses. You provide a Docker image, set CPU and memory limits, specify a container port, and Sealos handles everything else: pulling the image, scheduling pods, configuring a load balancer, provisioning a TLS certificate, and generating a public HTTPS URL.
+
+App Launchpad also supports:
+- **Horizontal scaling** — set a fixed replica count or enable autoscaling based on CPU usage.
+- **Environment variables** — inject configuration without rebuilding your image.
+- **Persistent volumes** — mount storage that survives pod restarts.
+- **Custom domains** — point your own domain to a deployed app by adding a CNAME record.
+
+Internally, App Launchpad creates a standard Kubernetes `Deployment` and `Service`, and an `Ingress` resource backed by an ingress controller. You can inspect the underlying YAML from the app details view if you need to.
+
+## DevBox
+
+DevBox gives you a cloud development environment — a containerized workspace running in Sealos with your language runtime, dependencies, and toolchain pre-installed. You connect to it from VS Code, Cursor, or any IDE that supports remote SSH development.
+
+DevBox eliminates the "works on my machine" problem by making the dev environment identical to production: the same Kubernetes infrastructure, the same network, and the same access to internal services like databases. You can spin up a new environment in seconds, share it with a teammate, or throw it away when you're done.
+
+Supported language runtimes include Node.js, Python, Go, Java, Rust, and more. Each environment is addressable by a stable hostname within your workspace.
+
+## Cluster images
+
+A cluster image is an OCI-compatible container image that packages a complete Kubernetes application stack — not just a single container, but all the manifests, Helm charts, and configuration needed to run a distributed application. Sealos uses the [Buildah](https://github.com/containers/buildah) SDK to build and distribute cluster images, making them fully compatible with standard OCI registries.
+
+The `sealos run` command installs a cluster image onto a Kubernetes cluster:
+
+```bash
+# Run a full MySQL operator cluster
+sealos run labring/mysql-operator:8.0.23-14.1
+
+# Run a Redis operator cluster
+sealos run labring/redis-operator:3.1.4
+
+# Run a ClickHouse cluster
+sealos run labring/clickhouse:0.18.4
+```
+
+You can build custom cluster images using a `Sealfile` — a Dockerfile-like syntax that references base cluster images and adds your own Helm charts or manifests:
+
+```bash
+FROM kubernetes:v1.25.0
+COPY my-chart .
+CMD ["helm install my-app my-chart"]
+```
+
+```bash
+sealos build -t my-cluster:v1.0.0 .
+sealos run my-cluster:v1.0.0 --masters 10.0.0.1 --nodes 10.0.0.2
+```
+
+Cluster images are stored in and distributed from OCI registries, so you can version them, pull them in air-gapped environments, and share them across teams.
+
+## Resource quotas
+
+Every workspace has resource quotas enforced at the Kubernetes namespace level. Quotas cap the total CPU, memory, and storage that all workloads in the workspace can consume. If a deployment request would exceed the workspace quota, Kubernetes rejects it.
+
+Workspace owners can view current quota usage in the **Workspace settings** panel. Quotas are set by the platform administrator for self-hosted deployments, or by your subscription tier on the Sealos public cloud.
+
+Resources are billed per workspace. If a team workspace exceeds its prepaid balance or credit, new workloads will not start until the balance is topped up.
+
+## Cost Center
+
+Cost Center is Sealos's usage-based billing module. It tracks consumption across six resource dimensions:
+
+| Resource | Unit |
+|---|---|
+| CPU | vCPU-hour |
+| Memory | GB-hour |
+| Storage | GB-hour |
+| Network egress | GB |
+| GPU | GPU-hour |
+| Object storage | GB-month |
+
+Charges accrue in real time as your workloads run. You can view a cost breakdown by resource type and by individual app from the **Cost Center** panel in the Sealos desktop.
+
+Sealos supports multiple payment methods including Stripe, WeChat Pay, and Alipay, depending on your region. Balances can be shared across workspaces within the same account.
+
+<AccordionGroup>
+
+<Accordion title="Can I use Sealos without knowing Kubernetes?">
+  Yes. App Launchpad, DevBox, and the managed database service are designed to be used without any Kubernetes knowledge. You interact with higher-level concepts — apps, environments, databases — and Sealos handles the underlying Kubernetes objects. If you want direct cluster access, you can use the built-in terminal or connect with `kubectl` using the kubeconfig available in your workspace settings.
+</Accordion>
+
+<Accordion title="What is the difference between a workspace and a region?">
+  A region is a physical cluster — a set of servers in a geographic location. A workspace is a logical partition inside a region. You have one or more workspaces per region. If you join a different region, you have a separate set of workspaces there. Resources in different regions cannot communicate over the internal cluster network.
+</Accordion>
+
+<Accordion title="How are cluster images different from Docker images?">
+  A Docker image packages a single process. A cluster image packages an entire Kubernetes application stack: Kubernetes manifests, Helm charts, operator CRDs, and any supporting container images needed to install and run a distributed system. Cluster images are built and distributed using OCI-compatible tools, so they work with any OCI registry — but they're consumed by `sealos run`, not `docker run`.
+</Accordion>
+
+<Accordion title="What happens if my workspace runs out of balance?">
+  When a workspace balance reaches zero, Sealos stops new workload scheduling. Existing running pods continue for a short grace period, after which they are suspended. Your data in persistent volumes is retained. You can reactivate workloads immediately by topping up the balance in Cost Center.
+</Accordion>
+
+<Accordion title="Can I self-host Sealos and skip the public cloud?">
+  Yes. Sealos is open source and designed to run on your own servers. The `sealos` CLI bootstraps a Kubernetes cluster and installs all the Sealos components from cluster images. See the [self-hosting guide](/self-hosting/overview) for a full walkthrough.
+</Accordion>
+
+</AccordionGroup>

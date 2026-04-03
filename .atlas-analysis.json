@@ -1,0 +1,111 @@
+{
+  "projectType": "saas",
+  "projectName": "Sealos",
+  "projectDescription": "Sealos is an AI-native Cloud Operating System built on Kubernetes that unifies the entire application lifecycle — from cloud IDE development to production deployment, managed databases, and AI infrastructure.",
+  "theme": "aspen",
+  "primaryColor": "#2aa4fc",
+  "lightColor": "#66aefc",
+  "darkColor": "#f2f8f9",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "concepts"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/devbox",
+              "features/app-launchpad",
+              "features/databases",
+              "features/object-storage",
+              "features/ai-proxy"
+            ]
+          },
+          {
+            "group": "Platform & Administration",
+            "pages": [
+              "platform/workspaces",
+              "platform/billing",
+              "platform/multi-tenancy"
+            ]
+          },
+          {
+            "group": "Self-Hosting",
+            "pages": [
+              "self-hosting/overview",
+              "self-hosting/installation",
+              "self-hosting/configuration",
+              "self-hosting/upgrade"
+            ]
+          },
+          {
+            "group": "Cluster Management",
+            "pages": [
+              "cluster/sealos-cli",
+              "cluster/cluster-images",
+              "cluster/high-availability",
+              "cluster/operations"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Account & Billing API",
+            "pages": [
+              "api/overview",
+              "api/account",
+              "api/billing",
+              "api/transfer"
+            ]
+          },
+          {
+            "group": "Developer Guide",
+            "pages": [
+              "api/authentication",
+              "api/contributing"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "DevBox: Cloud IDE with zero-setup development environments supporting multiple languages and frameworks",
+    "App Launchpad: One-click Docker image deployment with Kubernetes Deployments and Ingress",
+    "Managed Databases: Production-ready PostgreSQL, MySQL, MongoDB, and Redis clusters",
+    "Object Storage: Built-in S3-compatible object storage powered by MinIO",
+    "AI Proxy: Unified API gateway for multiple LLM providers with usage tracking",
+    "Cost Center: Usage-based billing with workspace-level resource quotas and invoicing",
+    "App Store/Templates: One-click deployment of complex applications without YAML",
+    "Kubernetes Lifecycle Management: Install, scale, and manage K8s clusters with the sealos CLI",
+    "Enterprise Multi-Tenancy: Workspace-based isolation with RBAC and resource quotas",
+    "High Availability: IPVS-based load balancing for production-grade clusters"
+  ],
+  "publicApiSurface": [
+    "POST /account/v1alpha1/costs — Get user cost history",
+    "POST /account/v1alpha1/account — Get account balance",
+    "POST /account/v1alpha1/payment — Get payment records",
+    "POST /account/v1alpha1/transfer — Transfer credits between accounts",
+    "POST /account/v1alpha1/regions — List available regions",
+    "POST /account/v1alpha1/invoice — Get and apply for invoices",
+    "sealos run — Deploy a cluster image or application",
+    "sealos apply — Apply a cluster image configuration",
+    "sealos add — Add nodes to a cluster",
+    "sealos delete — Remove nodes from a cluster",
+    "sealos reset — Reset and tear down a cluster",
+    "sealos build — Build a custom cluster image",
+    "sealos status — Show cluster status",
+    "sealos cert — Manage cluster TLS certificates"
+  ]
+}

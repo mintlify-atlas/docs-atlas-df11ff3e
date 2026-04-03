@@ -1,0 +1,666 @@
+---
+title: "Billing"
+description: "Query cost history, consumption data, and invoices."
+---
+
+## Get user costs
+
+Returns hourly cost records for the authenticated user within a time range, optionally filtered by namespace, app type, or app name.
+
+**`POST /account/v1alpha1/costs`**
+
+<ParamField body="startTime" type="string">
+  Start of the time range in ISO 8601 format. Defaults to six months ago.
+</ParamField>
+<ParamField body="endTime" type="string">
+  End of the time range in ISO 8601 format. Defaults to now.
+</ParamField>
+<ParamField body="namespace" type="string">
+  Filter results to a specific Kubernetes namespace (e.g. `"ns-admin"`).
+</ParamField>
+<ParamField body="appType" type="string">
+  Filter by application type (e.g. `"app"`, `"database"`).
+</ParamField>
+<ParamField body="appName" type="string">
+  Filter by application name.
+</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/costs \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "startTime": "2024-05-01T00:00:00Z",
+    "endTime":   "2024-06-01T00:00:00Z"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "costs": {
+      "2024-05-01T00:00:00Z": 12000,
+      "2024-05-01T01:00:00Z": 11500
+    }
+  },
+  "message": "successfully retrieved user costs"
+}
+```
+
+<ResponseField name="data.costs" type="object">
+  A map of ISO 8601 timestamps to cost amounts (in the platform's smallest monetary unit) for each hourly billing period.
+</ResponseField>
+
+---
+
+## Get app costs
+
+Returns per-app cost records within a time range. Supports filtering and pagination.
+
+**`POST /account/v1alpha1/costs/app`**
+
+<ParamField body="startTime" type="string">
+  Start of the time range in ISO 8601 format.
+</ParamField>
+<ParamField body="endTime" type="string">
+  End of the time range in ISO 8601 format.
+</ParamField>
+<ParamField body="namespace" type="string">
+  Filter to a specific namespace.
+</ParamField>
+<ParamField body="appType" type="string">
+  Filter by app type.
+</ParamField>
+<ParamField body="appName" type="string">
+  Filter by app name.
+</ParamField>
+<ParamField body="orderID" type="string">
+  Filter by a specific billing order ID.
+</ParamField>
+<ParamField body="page" type="integer">
+  Page number (1-based). Defaults to `1`.
+</ParamField>
+<ParamField body="pageSize" type="integer">
+  Number of records per page. Defaults to `10`.
+</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/costs/app \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "startTime": "2024-05-01T00:00:00Z",
+    "endTime":   "2024-06-01T00:00:00Z",
+    "namespace": "ns-admin",
+    "page": 1,
+    "pageSize": 20
+  }'
+```
+
+### Example response
+
+```json
+{
+  "app_costs": [
+    {
+      "app_name": "my-app",
+      "app_type": 8,
+      "time": "2024-05-15T10:00:00Z",
+      "order_id": "order-abc123",
+      "namespace": "ns-admin",
+      "amount": 5000
+    }
+  ]
+}
+```
+
+<ResponseField name="app_costs" type="array">
+  List of app cost records.
+
+  <Expandable title="app cost fields">
+    <ResponseField name="app_name" type="string">Application name.</ResponseField>
+    <ResponseField name="app_type" type="integer">Numeric app type identifier.</ResponseField>
+    <ResponseField name="time" type="string">Billing period timestamp.</ResponseField>
+    <ResponseField name="order_id" type="string">Unique billing order ID.</ResponseField>
+    <ResponseField name="namespace" type="string">Kubernetes namespace.</ResponseField>
+    <ResponseField name="amount" type="integer">Cost for this record in the smallest monetary unit.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get app type costs
+
+Returns cost and resource usage aggregated by resource type for a given app or time range.
+
+**`POST /account/v1alpha1/costs/app-type`**
+
+<ParamField body="startTime" type="string">Start of the time range.</ParamField>
+<ParamField body="endTime" type="string">End of the time range.</ParamField>
+<ParamField body="namespace" type="string">Filter to a specific namespace.</ParamField>
+<ParamField body="appType" type="string">Filter by app type.</ParamField>
+<ParamField body="appName" type="string">Filter by app name.</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/costs/app-type \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "startTime": "2024-05-01T00:00:00Z",
+    "endTime":   "2024-06-01T00:00:00Z"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "app_costs": {
+    "costs": [
+      {
+        "app_type": 8,
+        "used": { "0": 3600, "1": 7200 },
+        "used_amount": { "0": 240, "1": 480 }
+      }
+    ]
+  }
+}
+```
+
+<ResponseField name="app_costs.costs" type="array">
+  Per-resource-type cost breakdown.
+
+  <Expandable title="cost fields">
+    <ResponseField name="app_type" type="integer">Numeric app type ID.</ResponseField>
+    <ResponseField name="used" type="object">Map of resource type index to total usage quantity.</ResponseField>
+    <ResponseField name="used_amount" type="object">Map of resource type index to total cost in the smallest monetary unit.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get consumption amount
+
+Returns the total consumption amount (spending) for the authenticated user within a time range.
+
+**`POST /account/v1alpha1/costs/consumption`**
+
+<ParamField body="startTime" type="string">Start of the time range.</ParamField>
+<ParamField body="endTime" type="string">End of the time range.</ParamField>
+<ParamField body="namespace" type="string">Limit to a specific namespace.</ParamField>
+<ParamField body="appType" type="string">Limit to a specific app type.</ParamField>
+<ParamField body="appName" type="string">Limit to a specific app name.</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/costs/consumption \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "startTime": "2024-05-01T00:00:00Z",
+    "endTime":   "2024-06-01T00:00:00Z"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "amount": 128000000
+}
+```
+
+<ResponseField name="amount" type="integer">
+  Total consumption in the platform's smallest monetary unit.
+</ResponseField>
+
+---
+
+## Get recharge amount
+
+Returns the total amount recharged (topped up) by the authenticated user within a time range.
+
+**`POST /account/v1alpha1/costs/recharge`**
+
+<ParamField body="startTime" type="string">Start of the time range.</ParamField>
+<ParamField body="endTime" type="string">End of the time range.</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/costs/recharge \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "startTime": "2024-01-01T00:00:00Z",
+    "endTime":   "2024-06-01T00:00:00Z"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "amount": 500000000
+}
+```
+
+<ResponseField name="amount" type="integer">
+  Total amount recharged in the platform's smallest monetary unit.
+</ResponseField>
+
+---
+
+## Get cost overview
+
+Returns a paginated list of cost overview records, each representing a (namespace, app type, app name, region) combination with its total amount.
+
+**`POST /account/v1alpha1/cost-overview`**
+
+<ParamField body="namespace" type="string">Filter to a specific namespace.</ParamField>
+<ParamField body="appType" type="string">Filter by app type.</ParamField>
+<ParamField body="appName" type="string">Filter by app name.</ParamField>
+<ParamField body="page" type="integer">Page number (1-based).</ParamField>
+<ParamField body="pageSize" type="integer">Records per page.</ParamField>
+<ParamField body="startTime" type="string">Start of the time range.</ParamField>
+<ParamField body="endTime" type="string">End of the time range.</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/cost-overview \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "startTime": "2024-05-01T00:00:00Z",
+    "endTime":   "2024-06-01T00:00:00Z",
+    "page": 1,
+    "pageSize": 10
+  }'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "overviews": [
+      {
+        "amount": 45000000,
+        "namespace": "ns-admin",
+        "regionDomain": "us-west.cloud.sealos.io",
+        "appType": 8,
+        "appName": "my-app"
+      }
+    ],
+    "total": 1,
+    "totalPage": 1
+  }
+}
+```
+
+<ResponseField name="data.overviews" type="array">
+  List of overview records.
+
+  <Expandable title="overview fields">
+    <ResponseField name="amount" type="integer">Total cost for this combination.</ResponseField>
+    <ResponseField name="namespace" type="string">Kubernetes namespace.</ResponseField>
+    <ResponseField name="regionDomain" type="string">Domain of the region where this cost was incurred.</ResponseField>
+    <ResponseField name="appType" type="integer">Numeric app type ID.</ResponseField>
+    <ResponseField name="appName" type="string">Application name.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="data.total" type="integer">Total number of matching records across all pages.</ResponseField>
+<ResponseField name="data.totalPage" type="integer">Total number of pages.</ResponseField>
+
+---
+
+## Get cost app list
+
+Returns a paginated list of distinct (namespace, app type, app name) tuples that have billing records, optionally filtered.
+
+**`POST /account/v1alpha1/cost-app-list`**
+
+<ParamField body="namespace" type="string">Filter to a specific namespace.</ParamField>
+<ParamField body="appType" type="string">Filter by app type.</ParamField>
+<ParamField body="appName" type="string">Filter by app name.</ParamField>
+<ParamField body="page" type="integer">Page number (1-based).</ParamField>
+<ParamField body="pageSize" type="integer">Records per page.</ParamField>
+<ParamField body="startTime" type="string">Start of the time range.</ParamField>
+<ParamField body="endTime" type="string">End of the time range.</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/cost-app-list \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "page": 1,
+    "pageSize": 20
+  }'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "apps": [
+      {
+        "namespace": "ns-admin",
+        "appType": 8,
+        "appName": "my-app"
+      }
+    ],
+    "total": 1,
+    "totalPage": 1
+  }
+}
+```
+
+<ResponseField name="data.apps" type="array">
+  List of application entries that have cost records.
+
+  <Expandable title="app fields">
+    <ResponseField name="namespace" type="string">Kubernetes namespace.</ResponseField>
+    <ResponseField name="appType" type="integer">Numeric app type ID.</ResponseField>
+    <ResponseField name="appName" type="string">Application name.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="data.total" type="integer">Total number of matching records.</ResponseField>
+<ResponseField name="data.totalPage" type="integer">Total number of pages.</ResponseField>
+
+---
+
+## Get app type list
+
+Returns the mapping from numeric app type IDs to human-readable type names.
+
+**`POST /account/v1alpha1/cost-app-type-list`**
+
+No request body fields are required.
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/cost-app-type-list \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "0": "other",
+    "1": "app",
+    "3": "terminal",
+    "4": "job",
+    "8": "database"
+  }
+}
+```
+
+<ResponseField name="data" type="object">
+  Map of numeric app type ID (as string key) to the human-readable type name.
+</ResponseField>
+
+---
+
+## Get invoice
+
+Returns a paginated list of invoices for the authenticated user.
+
+**`POST /account/v1alpha1/invoice/get`**
+
+<ParamField body="invoiceID" type="string">
+  Filter to a specific invoice by ID.
+</ParamField>
+<ParamField body="page" type="integer">Page number (1-based).</ParamField>
+<ParamField body="pageSize" type="integer">Records per page.</ParamField>
+<ParamField body="startTime" type="string">Filter invoices created after this time.</ParamField>
+<ParamField body="endTime" type="string">Filter invoices created before this time.</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/invoice/get \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "page": 1,
+    "pageSize": 10
+  }'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "invoices": [
+      {
+        "id": "invoice-id-1",
+        "userUID": "550e8400-e29b-41d4-a716-446655440000",
+        "totalAmount": 100000000,
+        "status": "COMPLETED",
+        "detail": "{...}",
+        "createdAt": "2024-05-01T00:00:00Z"
+      }
+    ],
+    "total": 1,
+    "totalPage": 1
+  }
+}
+```
+
+<ResponseField name="data.invoices" type="array">
+  List of invoice records.
+
+  <Expandable title="invoice fields">
+    <ResponseField name="id" type="string">Invoice ID.</ResponseField>
+    <ResponseField name="userUID" type="string">UUID of the user who owns the invoice.</ResponseField>
+    <ResponseField name="totalAmount" type="integer">Total invoice amount in the smallest monetary unit.</ResponseField>
+    <ResponseField name="status" type="string">Invoice status: `PENDING`, `COMPLETED`, or `REJECTED`.</ResponseField>
+    <ResponseField name="detail" type="string">JSON-encoded invoice detail information supplied at creation.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 creation timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="data.total" type="integer">Total number of matching invoices.</ResponseField>
+<ResponseField name="data.totalPage" type="integer">Total number of pages.</ResponseField>
+
+---
+
+## Apply invoice
+
+Creates an invoice from a list of payment IDs. The server validates that the referenced payments are eligible (not already invoiced) and returns the invoice record and the associated payment list.
+
+**`POST /account/v1alpha1/invoice/apply`**
+
+<ParamField body="paymentIDList" type="array" required>
+  Array of payment IDs to include in this invoice.
+</ParamField>
+<ParamField body="detail" type="string" required>
+  JSON-encoded string containing the invoice detail (billing address, company name, tax ID, etc.).
+</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/invoice/apply \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "paymentIDList": ["payment-id-1", "payment-id-2"],
+    "detail": "{\"company\":\"Acme Corp\",\"taxID\":\"123456789\"}"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "invoice": {
+      "id": "invoice-id-new",
+      "totalAmount": 200000000,
+      "status": "PENDING"
+    },
+    "payments": [
+      { "id": "payment-id-1", "amount": 100000000 },
+      { "id": "payment-id-2", "amount": 100000000 }
+    ]
+  },
+  "message": "successfully apply invoice"
+}
+```
+
+<Note>
+Returns `403 Forbidden` if none of the requested payment IDs are eligible for invoicing (e.g. all are already invoiced or the total amount is zero).
+</Note>
+
+<ResponseField name="data.invoice" type="object">
+  The newly created invoice record.
+</ResponseField>
+<ResponseField name="data.payments" type="array">
+  The payment records included in the invoice.
+</ResponseField>
+
+---
+
+## Set invoice status
+
+Updates the status of one or more invoices. This endpoint requires a separate invoice token (not the standard user JWT) and is intended for internal invoice processing integrations.
+
+**`POST /account/v1alpha1/invoice/set-status`**
+
+<ParamField body="invoiceIDList" type="array" required>
+  Array of invoice IDs to update.
+</ParamField>
+<ParamField body="status" type="string" required>
+  New status for the invoices. One of: `COMPLETED`, `REJECTED`, `PENDING`.
+</ParamField>
+<ParamField body="token" type="string" required>
+  Invoice processing token (not the user JWT — see your platform configuration).
+</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/invoice/set-status \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "invoiceIDList": ["invoice-id-1"],
+    "status": "COMPLETED",
+    "token": "<invoice-token>"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "message": "successfully set status invoice"
+}
+```
+
+<Warning>
+This endpoint validates against a server-side invoice token, not the standard user JWT. Calls with an incorrect invoice token receive `401 Unauthorized`.
+</Warning>
+
+---
+
+## Get properties used amount
+
+Returns the total spend broken down by resource property type (CPU, memory, disk, etc.) for the authenticated user within a time range.
+
+**`POST /account/v1alpha1/costs/properties`**
+
+<ParamField body="startTime" type="string">Start of the time range.</ParamField>
+<ParamField body="endTime" type="string">End of the time range.</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/costs/properties \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "startTime": "2024-05-01T00:00:00Z",
+    "endTime":   "2024-06-01T00:00:00Z"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "amount": {
+    "cpu":    24000,
+    "memory": 12000,
+    "disk":   3000
+  }
+}
+```
+
+<ResponseField name="amount" type="object">
+  Map of property name to total cost in the smallest monetary unit.
+</ResponseField>
+
+---
+
+## Get all-region consumption amount
+
+Queries every configured region and returns the consumption amount per region as well as a global total. The calling user must be authenticated in the local region; the server fans out the query to remote regions using an internal service token.
+
+**`POST /account/v1alpha1/costs/all-region-consumption`**
+
+<ParamField body="startTime" type="string">Start of the time range.</ParamField>
+<ParamField body="endTime" type="string">End of the time range.</ParamField>
+<ParamField body="namespace" type="string">Limit to a specific namespace.</ParamField>
+<ParamField body="appType" type="string">Limit to a specific app type.</ParamField>
+<ParamField body="appName" type="string">Limit to a specific app name.</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/costs/all-region-consumption \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "startTime": "2024-05-01T00:00:00Z",
+    "endTime":   "2024-06-01T00:00:00Z"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "regionAmount": {
+    "us-west.cloud.sealos.io": 50000000,
+    "ap-east.cloud.sealos.io": 30000000
+  },
+  "allAmount": 80000000
+}
+```
+
+<ResponseField name="regionAmount" type="object">
+  Map of region domain to consumption amount for that region.
+</ResponseField>
+<ResponseField name="allAmount" type="integer">
+  Sum of consumption across all regions.
+</ResponseField>

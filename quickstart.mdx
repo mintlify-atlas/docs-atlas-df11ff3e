@@ -1,80 +1,143 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick start"
+description: "Deploy your first application on Sealos in under 5 minutes."
 ---
 
-## Get started in three steps
+This guide walks you through signing up, creating a workspace, and deploying your first containerized app using App Launchpad. No Kubernetes knowledge required.
 
-Get your documentation site running locally and make your first customization.
+## Before you begin
 
-### Step 1: Set up your local environment
+You need a Sealos account. If you don't have one yet, go to [sealos.io](https://os.sealos.io) and sign up — it takes under a minute.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
 
-### Step 2: Deploy your changes
+<Step title="Sign in to Sealos">
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+Navigate to [os.sealos.io](https://os.sealos.io). Sign in with GitHub, Google, WeChat, or a phone number — whichever you configured during sign-up.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+After signing in, you land on the Sealos desktop. This is your cloud workspace: a browser-based interface with app icons for every Sealos service.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+<Tip>
+  The Sealos desktop works entirely in your browser. No local CLI or Kubernetes tooling is needed for this guide.
+</Tip>
+</Step>
 
-### Step 3: Go live
+<Step title="Create a workspace">
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+Sealos automatically provisions a personal workspace for you on first login. Your workspace is an isolated Kubernetes namespace with its own resource quotas and billing.
 
-## Next steps
+To create a team workspace or switch between workspaces:
 
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+1. Click your username or avatar in the top-right corner of the desktop.
+2. Select **Switch workspace** from the dropdown.
+3. Click **Create workspace**, enter a name, and confirm.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Each workspace has independent resource quotas, members, and billing. Resources in one workspace are invisible to other workspaces.
 </Note>
+</Step>
+
+<Step title="Open App Launchpad">
+
+App Launchpad is the easiest way to deploy any Docker image on Sealos. It creates a Kubernetes Deployment and exposes it through an HTTPS Ingress automatically.
+
+1. On the Sealos desktop, click the **App Launchpad** icon.
+2. Click **Create App** in the top-right corner.
+</Step>
+
+<Step title="Configure and deploy nginx">
+
+Fill in the deployment form:
+
+| Field | Value |
+|---|---|
+| **App name** | `my-nginx` |
+| **Image** | `nginx:latest` |
+| **CPU** | 0.1 cores |
+| **Memory** | 64 MB |
+| **Container port** | `80` |
+
+Enable the **Public access** toggle. Sealos will generate a unique HTTPS URL for your app.
+
+Click **Deploy** to launch the application.
+
+```bash
+# The image Sealos will pull and run:
+nginx:latest
+```
+
+<Note>
+  Sealos pulls public images from Docker Hub by default. For private registries, click **Advanced settings** and provide your registry credentials.
+</Note>
+</Step>
+
+<Step title="Access your deployed app">
+
+After clicking **Deploy**, Sealos takes you to the app details page. Wait for the status indicator to show **Running** — this typically takes 15–30 seconds.
+
+Once running:
+
+1. Find the **Public address** field in the app details panel.
+2. Click the generated URL (for example, `https://my-nginx.cloud.sealos.run`).
+
+You should see the nginx welcome page served over HTTPS. Sealos provisions a TLS certificate and configures the ingress automatically.
+
+<Tip>
+  You can update environment variables, scale replicas, or change resource limits from the app details page without redeploying.
+</Tip>
+</Step>
+
+</Steps>
+
+## Optional: Connect a database
+
+If your app needs a database, Sealos provides managed PostgreSQL, MySQL, MongoDB, and Redis clusters.
+
+<Steps>
+
+<Step title="Create a database">
+
+1. Return to the Sealos desktop and click **Database**.
+2. Click **Create database**, select a database type (for example, PostgreSQL), and configure your instance size.
+3. Click **Deploy**. The database will be ready in about a minute.
+</Step>
+
+<Step title="Connect to your app">
+
+From the database details page, copy the connection string. It follows this format:
+
+```bash
+postgresql://username:password@hostname:5432/dbname
+```
+
+In App Launchpad, open your app and click **Edit**. Add the connection string as an environment variable:
+
+```bash
+DATABASE_URL=postgresql://username:password@hostname:5432/dbname
+```
+
+Save and redeploy. Your app now has access to the managed database within the same workspace network.
+
+<Note>
+  Database instances in the same workspace communicate over the internal cluster network — no public exposure required for backend connections.
+</Note>
+</Step>
+
+</Steps>
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="Core concepts" icon="lightbulb" href="/concepts">
+    Learn about workspaces, regions, cluster images, and how Sealos organizes resources.
+  </Card>
+  <Card title="DevBox" icon="code" href="/features/devbox">
+    Set up a cloud development environment with your IDE connected directly to Sealos.
+  </Card>
+  <Card title="App Launchpad" icon="rocket" href="/features/app-launchpad">
+    Explore scaling, environment variables, custom domains, and storage volumes.
+  </Card>
+  <Card title="Managed databases" icon="database" href="/features/databases">
+    Deploy PostgreSQL, MySQL, MongoDB, and Redis with automated backups.
+  </Card>
+</CardGroup>

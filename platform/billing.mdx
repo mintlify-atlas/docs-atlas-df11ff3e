@@ -1,0 +1,161 @@
+---
+title: "Billing and cost management"
+description: "Understand how Sealos usage-based billing works and manage your cloud spend."
+---
+
+Sealos uses a usage-based billing model. You pay for the resources your workloads actually consume — CPU, memory, storage, and network egress — measured continuously and charged against your account balance. The Cost Center application is your central hub for viewing usage, recharging your balance, managing invoices, and setting up spending alerts.
+
+## How billing works
+
+Resource consumption is metered at the workspace level. The billing engine reconciles usage records on a short interval (approximately every few seconds for active workloads) and archives hourly snapshots for reporting. Charges accumulate against your account balance in real time.
+
+Supported resource dimensions:
+
+<CardGroup cols={3}>
+  <Card title="CPU" icon="microchip">
+    Charged per vCPU-second across all running pods in the workspace.
+  </Card>
+  <Card title="Memory" icon="memory">
+    Charged per GiB-second of RAM allocated to running pods.
+  </Card>
+  <Card title="Storage" icon="hard-drive">
+    Charged per GiB-month of persistent volume capacity provisioned.
+  </Card>
+  <Card title="Network" icon="network-wired">
+    Outbound (egress) traffic billed per GiB. Included traffic is provided by workspace subscription plans.
+  </Card>
+  <Card title="GPU" icon="server">
+    GPU-accelerated workloads are billed per GPU-second based on the GPU model allocated.
+  </Card>
+  <Card title="Object Storage" icon="folder">
+    S3-compatible object storage billed per GiB-month of data stored.
+  </Card>
+</CardGroup>
+
+Billing is denominated in the currency configured for your region. Sealos supports multiple currencies including USD and CNY, and supports payment via Stripe, Alipay, and WeChat Pay depending on your region.
+
+## Viewing your balance and usage
+
+Open the **Cost Center** application from the Sealos desktop to access your financial overview.
+
+<Tabs>
+  <Tab title="Balance overview">
+    The home screen of Cost Center shows your current account balance, total consumption over the selected period, and any pending charges. You can filter consumption data by a custom date range to review specific periods.
+  </Tab>
+  <Tab title="Usage by resource">
+    The **Properties** view breaks down your consumption by individual resource type (CPU, memory, storage, network, GPU). Each row shows total units consumed and the corresponding charge for the selected time window.
+  </Tab>
+  <Tab title="Usage by application">
+    The **Apps** view lists costs per application and application type. You can drill down into a specific app to see how its CPU, memory, and storage costs changed over time. Filter by namespace, app type, and app name to narrow results.
+  </Tab>
+  <Tab title="Workspace consumption">
+    The **Workspace** view shows aggregated consumption per workspace (namespace), allowing workspace Owners to see how much each team environment is spending across all regions.
+  </Tab>
+</Tabs>
+
+## Recharging your account
+
+Your account balance must remain positive for workloads to continue running. When your balance reaches zero, Sealos suspends traffic to your resources until the balance is restored.
+
+<Steps>
+  <Step title="Open Cost Center">
+    Click **Cost Center** in the Sealos desktop app launcher.
+  </Step>
+  <Step title="Click Recharge">
+    On the overview page, click the **Recharge** button. The recharge dialog shows available top-up amounts.
+  </Step>
+  <Step title="Select an amount and payment method">
+    Choose a top-up amount. First-time recharges may qualify for a bonus credit. Select your payment method — Stripe (card), Alipay, or WeChat Pay depending on availability in your region.
+  </Step>
+  <Step title="Complete payment">
+    Follow the payment provider's flow to complete the transaction. Your balance updates immediately after the payment is confirmed.
+  </Step>
+</Steps>
+
+<Tip>
+  Recharge discounts are available in tiers. Larger top-ups receive a higher bonus percentage. Check the **Recharge Discount** section in Cost Center to see the current tier structure before adding funds.
+</Tip>
+
+You can also redeem gift codes issued through promotions. In Cost Center, navigate to **Gift Code** and enter your code to apply the credit to your balance.
+
+## Cost breakdown by application type
+
+Cost Center groups your spending by application type so you can identify which categories of workload drive the most cost. Common types include:
+
+- **App** — Deployments created via App Launchpad
+- **Database** — Managed database instances (PostgreSQL, MySQL, MongoDB, Redis)
+- **Devbox** — Cloud IDE development environments
+- **Object Storage** — S3-compatible storage buckets
+- **AI / LLM** — AI inference and model serving workloads
+
+Use the **App Type List** and **Cost App List** views to page through all billable resources, filter by namespace and date range, and export data for further analysis.
+
+## Setting budget alerts
+
+Sealos supports spending alert notifications so you can react before your balance runs out or a workspace exceeds its budget.
+
+<Steps>
+  <Step title="Open alert settings">
+    In Cost Center, navigate to **Alert Notifications** under the settings menu.
+  </Step>
+  <Step title="Create a notification account">
+    Click **Add Notification**. Enter the channel details — for example, a webhook URL or email address. Toggle the notification account active.
+  </Step>
+  <Step title="Set threshold rules">
+    Define the balance threshold at which you want to receive an alert. Sealos fires a notification when your account balance drops below the configured amount.
+  </Step>
+</Steps>
+
+You can create multiple notification accounts (for example, to alert both a Slack channel and an email inbox), and toggle individual accounts on or off without deleting them.
+
+## Workspace subscription plans
+
+Beyond pay-as-you-go usage, each workspace can subscribe to a plan that provides higher resource quotas and a bundled network traffic allowance.
+
+<Accordion title="Subscription plan details">
+  Subscription plans are billed on a monthly (`1m`) or yearly (`1y`) cycle. Available operations on a subscription are:
+
+  - **Created** — activate a new subscription for a workspace
+  - **Upgraded** — move to a higher tier mid-cycle (prorated charge calculated automatically)
+  - **Downgraded** — move to a lower tier at the next renewal
+  - **Canceled** — stop the subscription at the end of the current period
+  - **Renewed** — manually renew before the expiry date
+  - **Resumed** — reactivate a suspended subscription
+
+  When you upgrade, existing traffic packages from the old plan are expired and replaced with the new plan's traffic allowance. If a workspace's traffic allowance is exhausted, outbound network is suspended until the allowance renews or you purchase an add-on.
+</Accordion>
+
+You can pay for workspace subscriptions using Stripe or your account balance. Card management (add, remove, set default) is available from the **Payment** section of Cost Center.
+
+## Downloading invoices
+
+Sealos provides invoice records for all payment transactions.
+
+<Steps>
+  <Step title="Go to Invoices in Cost Center">
+    Click the **Invoice** tab in the Cost Center navigation.
+  </Step>
+  <Step title="Select payment records">
+    Use the date range filter to find the payments you want to invoice. Select individual payment IDs or select all.
+  </Step>
+  <Step title="Apply for an invoice">
+    Click **Apply Invoice**, fill in your billing details (company name, tax ID, address), and submit the request. Invoice status transitions through **Pending**, **Completed**, and **Rejected** states.
+  </Step>
+  <Step title="Download">
+    Once your invoice status shows **Completed**, you can download the invoice document from the same **Invoice** tab.
+  </Step>
+</Steps>
+
+## Transferring credits between workspaces
+
+If you manage multiple workspaces, you can transfer balance from one workspace to another without going through a payment provider.
+
+```http
+POST /account/v1alpha1/transfer
+```
+
+Supply the target username (`toUser`) and the amount to transfer in the smallest currency unit. Set `transferAll: true` to move the entire balance in a single operation. Transfer history is available via the transfer records view in Cost Center, with filtering by direction (all, incoming, outgoing) and date range.
+
+<Note>
+  Transfers are recorded in the billing system and appear in both the source and destination workspace's transaction history for audit purposes.
+</Note>

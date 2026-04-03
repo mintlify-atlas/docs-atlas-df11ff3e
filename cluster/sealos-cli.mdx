@@ -1,0 +1,487 @@
+---
+title: "Sealos CLI reference"
+description: "Complete reference for the sealos command-line tool for Kubernetes cluster lifecycle management."
+---
+
+The `sealos` binary is a self-contained, dependency-free CLI that manages the complete lifecycle of Kubernetes clusters. It requires no Ansible, HAProxy, or Keepalived — just a single binary copied to your Linux hosts.
+
+## Global flags
+
+These flags are available on every `sealos` subcommand.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--debug` | `false` | Enable debug-level logging |
+
+---
+
+## Cluster management
+
+<AccordionGroup>
+
+<Accordion title="sealos run — deploy cluster images">
+
+Deploy one or more cluster images onto bare-metal or virtual machines. `sealos run` is the primary entry point for bootstrapping a new Kubernetes cluster or installing additional applications on an existing one.
+
+**Syntax**
+
+```bash
+sealos run [IMAGE [IMAGE...]] [flags]
+```
+
+**Flags**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--masters` | | | Comma-separated list of master node IP addresses |
+| `--nodes` | | | Comma-separated list of worker node IP addresses |
+| `--cluster` | | `default` | Name of the cluster |
+| `--user` | `-u` | | SSH username to authenticate as |
+| `--passwd` | `-p` | | SSH password |
+| `--pk` | `-i` | `~/.ssh/id_rsa` | Path to the SSH private key file |
+| `--pk-passwd` | | | Passphrase for decrypting a PEM-encoded private key |
+| `--port` | | `22` | SSH port to connect to on the remote hosts |
+| `--env` | `-e` | | Environment variables to pass to cluster images |
+| `--cmd` | | | Override the `CMD` directive in cluster images |
+| `--config-file` | | | Path(s) to custom config files that replace embedded resources |
+| `--force` | `-f` | `false` | Force override an already-installed application in the cluster |
+| `--transport` | `-t` | `oci-archive` | Image transport format when loading from a tar file (`oci-archive` or `docker-archive`) |
+
+**Examples**
+
+```bash
+# Three-master, two-node HA cluster with Kubernetes, Helm, and Calico
+sealos run labring/kubernetes:v1.25.0-4.2.0 labring/helm:v3.8.2 labring/calico:v3.24.1 \
+  --masters 192.168.0.2,192.168.0.3,192.168.0.4 \
+  --nodes 192.168.0.5,192.168.0.6,192.168.0.7 \
+  --passwd 'your-ssh-password'
+```
+
+```bash
+# Single-node cluster (no --masters / --nodes required)
+sealos run labring/kubernetes:v1.25.0
+```
+
+```bash
+# Custom SSH port per host
+sealos run labring/kubernetes:v1.24.0 \
+  --masters 192.168.0.2,192.168.0.3:23,192.168.0.4:24 \
+  --nodes 192.168.0.5:25,192.168.0.6:25,192.168.0.7:27 \
+  --passwd 'your-ssh-password'
+```
+
+```bash
+# Set environment variables consumed by image CMD scripts
+sealos run -e DashBoardPort=8443 mydashboard:latest \
+  --masters 192.168.0.2,192.168.0.3,192.168.0.4 \
+  --nodes 192.168.0.5,192.168.0.6,192.168.0.7 \
+  --passwd 'your-ssh-password'
+```
+
+```bash
+# Custom VIP for the Kubernetes API server
+sealos run -e defaultVIP=10.103.97.2 labring/kubernetes:v1.24.0 \
+  --masters 192.168.0.2,192.168.0.3,192.168.0.4 \
+  --nodes 192.168.0.5,192.168.0.6,192.168.0.7 \
+  --passwd 'your-ssh-password'
+```
+
+```bash
+# Install a distributed application on an already-running cluster
+sealos run labring/mysql-operator:8.0.23-14.1
+```
+
+</Accordion>
+
+<Accordion title="sealos apply — apply a Clusterfile">
+
+Apply a declarative `Clusterfile` to create or update a cluster. This is the GitOps-friendly alternative to `sealos run`; the desired state is expressed as a file rather than CLI flags.
+
+**Syntax**
+
+```bash
+sealos apply [flags]
+```
+
+**Flags**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--Clusterfile` | `-f` | `Clusterfile` | Path to the Clusterfile to apply |
+| `--values` | | | Values files to render into the Clusterfile (Helm-style) |
+| `--set` | | | Set individual values on the command line |
+| `--env` | | | Environment variables to pass to cluster images |
+| `--config-file` | | | Path(s) to custom config files that replace embedded resources |
+
+**Example**
+
+```bash
+sealos apply -f Clusterfile
+```
+
+```bash
+# Override values at apply time
+sealos apply -f Clusterfile --set masters=192.168.0.2 --values prod-values.yaml
+```
+
+<Tip>
+  Use `sealos gen` to generate an initial `Clusterfile` from the same image
+  arguments you would pass to `sealos run`, then check it into version control
+  and manage changes through `sealos apply`.
+</Tip>
+
+</Accordion>
+
+<Accordion title="sealos gen — generate a Clusterfile">
+
+Generate a `Clusterfile` with all defaults filled in and print it to stdout (or write it to a file with `--output`). The generated file can be edited and then applied with `sealos apply`.
+
+**Syntax**
+
+```bash
+sealos gen IMAGE [IMAGE...] [flags]
+```
+
+**Flags**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--masters` | | | Comma-separated list of master node IP addresses |
+| `--nodes` | | | Comma-separated list of worker node IP addresses |
+| `--cluster` | | `default` | Cluster name embedded in the Clusterfile |
+| `--user` | `-u` | | SSH username |
+| `--passwd` | `-p` | | SSH password |
+| `--pk` | `-i` | `~/.ssh/id_rsa` | Path to SSH private key |
+| `--pk-passwd` | | | Private key passphrase |
+| `--port` | | `22` | SSH port |
+| `--env` | `-e` | | Environment variables |
+| `--cmd` | | | Override `CMD` directives in images |
+| `--config-file` | | | Custom config file paths |
+| `--output` | `-o` | (stdout) | Write the Clusterfile to this path instead of stdout |
+
+**Examples**
+
+```bash
+# Print a single-node Clusterfile to stdout
+sealos gen labring/kubernetes:v1.25.0 labring/helm:v3.8.2 labring/calico:v3.24.1
+```
+
+```bash
+# Generate a multi-node Clusterfile and save it to disk
+sealos gen labring/kubernetes:v1.25.0 labring/helm:v3.8.2 labring/calico:v3.24.1 \
+  --masters 192.168.0.2,192.168.0.3,192.168.0.4 \
+  --nodes 192.168.0.5,192.168.0.6,192.168.0.7 \
+  --passwd 'your-ssh-password' \
+  --output Clusterfile
+```
+
+</Accordion>
+
+<Accordion title="sealos status — show cluster status">
+
+Run a suite of health checks against a cluster and report the results. Checks include the registry, CRI shim, CRI control, init system, nodes, pods, services, and overall cluster state.
+
+**Syntax**
+
+```bash
+sealos status [flags]
+```
+
+**Flags**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--cluster` | `-c` | `default` | Name of the cluster to inspect |
+
+**Example**
+
+```bash
+sealos status
+sealos status -c production
+```
+
+</Accordion>
+
+<Accordion title="sealos reset — tear down a cluster">
+
+Destroy all cluster components on every node. This command prompts for confirmation before proceeding unless `--force` is supplied.
+
+<Warning>
+  `sealos reset` is irreversible. It removes all Kubernetes components,
+  configuration, and data from every node in the cluster.
+</Warning>
+
+**Syntax**
+
+```bash
+sealos reset [flags]
+```
+
+**Flags**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--cluster` | | `default` | Name of the cluster to reset |
+| `--user` | `-u` | | SSH username |
+| `--passwd` | `-p` | | SSH password |
+| `--pk` | `-i` | `~/.ssh/id_rsa` | Path to SSH private key |
+| `--pk-passwd` | | | Private key passphrase |
+| `--port` | | `22` | SSH port |
+| `--force` | | `false` | Skip the confirmation prompt and reset immediately |
+
+**Example**
+
+```bash
+sealos reset --name default
+sealos reset --name production --force
+```
+
+</Accordion>
+
+<Accordion title="sealos cert — manage TLS certificates">
+
+Add or update Subject Alternative Names (SANs) in the Kubernetes API server certificate. Use this when you add a new IP address or domain name that clients will use to reach the API server (for example, a public EIP).
+
+<Note>
+  After running `sealos cert` you must manually restart the API server on each
+  master for the new certificate to take effect.
+</Note>
+
+**Syntax**
+
+```bash
+sealos cert [flags]
+```
+
+**Flags**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--cluster` | `-c` | `default` | Name of the cluster whose certs to update |
+| `--alt-names` | | | **Required.** Comma-separated list of domain names or IP addresses to add as SANs |
+
+**Example**
+
+```bash
+# Add a public EIP as a SAN so remote kubectl clients can connect
+sealos cert --alt-names 39.105.169.253
+
+# Add multiple SANs at once
+sealos cert --alt-names sealos.io,10.103.97.2,127.0.0.1,localhost
+```
+
+After updating the cert, edit `~/.kube/config` to point the server address to the new SAN:
+
+```bash
+# Verify the updated certificate
+openssl x509 -noout -text -in /etc/kubernetes/pki/apiserver.crt | grep -A2 "Subject Alternative Name"
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+---
+
+## Node management
+
+<AccordionGroup>
+
+<Accordion title="sealos add — add masters or nodes">
+
+Join additional master or worker nodes into an existing cluster without rebuilding it from scratch.
+
+**Syntax**
+
+```bash
+sealos add [flags]
+```
+
+**Flags**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--masters` | | | Comma-separated IPs of masters to join |
+| `--nodes` | | | Comma-separated IPs of workers to join |
+| `--cluster` | | `default` | Name of the cluster to join nodes into |
+| `--user` | `-u` | | SSH username for the new nodes |
+| `--passwd` | `-p` | | SSH password for the new nodes |
+| `--pk` | `-i` | `~/.ssh/id_rsa` | SSH private key for the new nodes |
+| `--pk-passwd` | | | Private key passphrase |
+| `--port` | | `22` | SSH port on the new nodes |
+
+<Note>
+  All nodes in a single `sealos add` invocation must share the same SSH
+  credentials. Issue separate commands if credentials differ.
+</Note>
+
+**Examples**
+
+```bash
+# Add a single worker node
+sealos add --nodes 192.168.0.10
+
+# Add two masters and two workers at once
+sealos add --masters 192.168.0.8,192.168.0.9 --nodes 192.168.0.10,192.168.0.11
+
+# Add a range of nodes using CIDR-style notation
+sealos add --masters 192.168.0.8-192.168.0.10 --nodes 192.168.0.11-192.168.0.13
+
+# Add nodes with non-default SSH credentials
+sealos add --nodes 192.168.0.10 --passwd different-password
+```
+
+</Accordion>
+
+<Accordion title="sealos delete — remove masters or nodes">
+
+Gracefully drain and remove master or worker nodes from a cluster.
+
+<Warning>
+  Removing a master node reduces HA headroom. Removing the last master
+  destroys the control plane. Confirm the operation carefully — removed nodes
+  must be re-added with `sealos add` to rejoin.
+</Warning>
+
+**Syntax**
+
+```bash
+sealos delete [flags]
+```
+
+**Flags**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--masters` | | | Comma-separated IPs of masters to remove |
+| `--nodes` | | | Comma-separated IPs of workers to remove |
+| `--cluster` | | `default` | Name of the cluster to remove nodes from |
+| `--force` | | `false` | Skip the confirmation prompt |
+
+**Examples**
+
+```bash
+# Remove a single worker node
+sealos delete --nodes 192.168.0.10
+
+# Remove a master (confirmation required)
+sealos delete --masters 192.168.0.4
+
+# Remove both masters and nodes in one command
+sealos delete --masters 192.168.0.4 --nodes 192.168.0.10,192.168.0.11
+
+# Force removal without confirmation
+sealos delete --nodes 192.168.0.10 --force
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+---
+
+## Remote operations
+
+<AccordionGroup>
+
+<Accordion title="sealos exec — run commands on cluster nodes">
+
+Execute a shell command in parallel across all or a filtered subset of cluster nodes over SSH.
+
+**Syntax**
+
+```bash
+sealos exec [flags] COMMAND
+```
+
+**Flags**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--cluster` | `-c` | `default` | Name of the cluster to target |
+| `--roles` | `-r` | | Run only on nodes that carry the specified role label(s) |
+| `--ips` | | | Run only on the specified IP address(es) |
+
+**Examples**
+
+```bash
+# Run on all nodes in the default cluster
+sealos exec "cat /etc/hosts"
+
+# Target a specific named cluster
+sealos exec -c production "systemctl status kubelet"
+
+# Run only on master nodes
+sealos exec -c production -r master "kubectl get nodes"
+
+# Run on specific IPs
+sealos exec -c production --ips 192.168.0.2,192.168.0.3 "df -h"
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+---
+
+## Container and image commands
+
+<AccordionGroup>
+
+<Accordion title="sealos build — build a cluster image">
+
+Build an OCI-compatible cluster image from a `Sealfile`, `Kubefile`, `Dockerfile`, or `Containerfile`. Powered by Buildah under the hood.
+
+**Syntax**
+
+```bash
+sealos build [CONTEXT] [flags]
+```
+
+The build context defaults to the current working directory. Sealos looks for instruction files in this priority order: `Sealfile` → `Kubefile` → `Dockerfile` → `Containerfile`.
+
+**Key flags**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--file` | `-f` | Path to the build instruction file |
+| `--tag` | `-t` | Name and optional tag for the output image (`name:tag`) |
+| `--platform` | | Target platform(s), e.g. `linux/amd64,linux/arm64` |
+| `--no-cache` | | Disable layer caching during build |
+| `--pull` | | Always attempt to pull a newer base image |
+
+**Example**
+
+```bash
+# Build from a Sealfile in the current directory
+sealos build -t my-kubernetes:v1.25.0 .
+
+# Build for multiple platforms
+sealos build -t labring/custom-app:v1.0.0 --platform linux/amd64,linux/arm64 .
+
+# Use an explicit instruction file
+sealos build -f ./deploy/Sealfile -t my-app:latest .
+```
+
+</Accordion>
+
+<Accordion title="sealos version — show version information">
+
+Print the sealos binary version, build metadata, and Go runtime info.
+
+**Syntax**
+
+```bash
+sealos version
+```
+
+**Example**
+
+```bash
+sealos version
+# Output includes version, commit, build date, and Go version
+```
+
+</Accordion>
+
+</AccordionGroup>

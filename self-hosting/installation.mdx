@@ -1,0 +1,254 @@
+---
+title: "Installation"
+description: "Step-by-step guide to installing Sealos on your own servers."
+---
+
+This guide walks you through installing a self-hosted Sealos cloud platform using the `install-v2.sh` script. The script bootstraps a Kubernetes cluster, installs all required infrastructure components, and deploys the full Sealos cloud layer in a single automated run.
+
+<Note>
+  Before you begin, read the [self-hosting overview](/self-hosting/overview) to verify your servers meet the hardware and OS requirements.
+</Note>
+
+## Prerequisites
+
+Ensure the following conditions are true before running the installer:
+
+- All nodes run a supported Linux distribution with `systemd` and `iptables` installed
+- For multi-node clusters: all nodes are reachable by SSH from the machine running the installer, using a shared password or key pair
+- Port 443 (or your chosen `--cloud-port`) is open on your load balancer or control-plane node
+- You have a domain name (or a `nip.io` address) pointing to your control-plane node's IP
+- The machine running the installer has `curl` or `wget` available
+
+<Tip>
+  If you don't have a domain name, use a `nip.io` wildcard address. For example, if your server IP is `203.0.113.10`, use `203.0.113.10.nip.io` as your cloud domain. This requires no DNS configuration.
+</Tip>
+
+## Install the sealos CLI
+
+The installer script will offer to install the sealos CLI for you if it isn't already present. To install it manually before running the installer, run:
+
+```bash
+curl -sfL https://raw.githubusercontent.com/labring/sealos/main/scripts/install.sh \
+  | sh -s v5.1.0 labring/sealos
+```
+
+Verify the installation:
+
+```bash
+sealos version
+```
+
+The binary is placed at `/usr/bin/sealos` and supports both `amd64` and `arm64` architectures.
+
+## Run the installer
+
+<Steps>
+
+<Step title="Download the installer">
+
+Download `install-v2.sh` from the Sealos repository:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/labring/sealos/main/scripts/cloud/install-v2.sh \
+  -o install-v2.sh
+chmod +x install-v2.sh
+```
+
+</Step>
+
+<Step title="Configure your environment">
+
+The installer reads all configuration from environment variables. The only required variable is `SEALOS_V2_CLOUD_DOMAIN`. Create a `sealos.env` file to hold your configuration — the script loads this file automatically if it exists in the current directory:
+
+```bash
+# sealos.env — copy and edit this file
+
+# Required: your public domain (or a nip.io address)
+SEALOS_V2_CLOUD_DOMAIN="cloud.example.com"
+
+# Node IPs (comma-separated, with SSH port, e.g. 192.0.2.10:22)
+# For a single node, set SEALOS_V2_MASTERS to the current machine's IP.
+SEALOS_V2_MASTERS="192.0.2.10:22"
+SEALOS_V2_NODES=""
+
+# SSH credentials
+SEALOS_V2_SSH_KEY="$HOME/.ssh/id_rsa"
+SEALOS_V2_SSH_PASSWORD=""
+
+# TLS (leave blank to use a Sealos self-signed cert)
+SEALOS_V2_CERT_PATH=""
+SEALOS_V2_KEY_PATH=""
+
+# Cloud version to deploy
+SEALOS_V2_CLOUD_VERSION="v5.1.0"
+SEALOS_V2_CLI_VERSION="v5.1.0"
+```
+
+<Note>
+  The full list of supported environment variables is documented in the [configuration guide](/self-hosting/configuration). Run `./install-v2.sh --help` to print all available variables with descriptions.
+</Note>
+
+</Step>
+
+<Step title="Deploy the Kubernetes cluster and cloud components">
+
+Run the installer. It will pull all required cluster images, bootstrap Kubernetes, install the infrastructure layer, and deploy the Sealos cloud:
+
+```bash
+./install-v2.sh
+```
+
+For a quick single-node test without a config file, you can pass variables inline:
+
+```bash
+SEALOS_V2_CLOUD_DOMAIN=127.0.0.1.nip.io \
+SEALOS_V2_MASTERS="127.0.0.1:22" \
+./install-v2.sh
+```
+
+The installer runs the following steps in order:
+
+| Step | What happens |
+|---|---|
+| 1 | Environment and dependency checks |
+| 2 | Pull all cluster images (kubernetes, cilium, cert-manager, OpenEBS, Higress, KubeBlocks, VictoriaMetrics, sealos-cloud) |
+| 3 | Bootstrap Kubernetes with `sealos run` |
+| 4 | Install Cilium CNI, cert-manager, OpenEBS, metrics-server, CockroachDB, VictoriaMetrics, Higress, and KubeBlocks |
+| 5 | Deploy the Sealos Cloud base (MongoDB, CockroachDB init, config map generation) |
+| 6 | Deploy the desktop frontend |
+| 7 | Deploy all controllers and services |
+| 8 | Deploy all remaining frontends |
+
+<Warning>
+  Do not interrupt the installer after it begins modifying the cluster. If the run fails partway through, you can re-run the script — it detects an already-installed Kubernetes cluster and skips the bootstrap phase.
+</Warning>
+
+</Step>
+
+<Step title="Wait for all nodes to be ready">
+
+After the Kubernetes bootstrap, the installer waits for all nodes to reach `Ready` status before continuing. You can monitor progress in a separate terminal:
+
+```bash
+watch kubectl get nodes
+```
+
+Expected output once the cluster is healthy:
+
+```
+NAME           STATUS   ROLES           AGE   VERSION
+my-server      Ready    control-plane   2m    v1.28.15
+```
+
+</Step>
+
+<Step title="Verify the Sealos cloud deployment">
+
+Once the installer completes, check that all Sealos pods are running:
+
+```bash
+kubectl get pods -n sealos
+kubectl get pods -n sealos-system
+```
+
+All pods should be in `Running` state. If any pods are in `Pending` or `CrashLoopBackOff`, check their logs:
+
+```bash
+kubectl logs -n sealos <pod-name>
+```
+
+Verify the sealos-config ConfigMap was created with your domain:
+
+```bash
+kubectl get configmap sealos-config -n sealos-system -o yaml
+```
+
+</Step>
+
+<Step title="Access the Sealos desktop">
+
+Open a browser and navigate to your configured domain over HTTPS:
+
+```
+https://<your-cloud-domain>
+```
+
+The installer prints login credentials at the end of the run:
+
+```
+Sealos cloud login info:
+URL:            https://cloud.example.com
+admin Username: admin
+admin Password: sealos2023
+```
+
+<Warning>
+  Change the default `admin` password immediately after your first login. The default credentials are publicly known and must not remain in use on any internet-accessible deployment.
+</Warning>
+
+</Step>
+
+<Step title="Trust the TLS certificate (self-signed only)">
+
+If you used a self-signed certificate (the default when no cert files are provided), your browser will show a certificate warning. To trust the certificate:
+
+- **Chrome / Edge**: Click **Advanced** → **Proceed to \<domain\>**
+- **Firefox**: Click **Advanced** → **Accept the Risk and Continue**
+- **System-wide**: Download the certificate from your browser and add it to your OS trust store
+
+For production deployments, replace the self-signed certificate with a valid certificate from a public CA. See the [configuration guide](/self-hosting/configuration#tls-and-domain-configuration) for details.
+
+</Step>
+
+</Steps>
+
+## Multi-node installation
+
+For a production high-availability cluster, set `SEALOS_V2_MASTERS` to a comma-separated list of control-plane node IPs (use an odd number — 3 or 5) and `SEALOS_V2_NODES` for worker nodes:
+
+```bash
+SEALOS_V2_CLOUD_DOMAIN="cloud.example.com" \
+SEALOS_V2_MASTERS="192.0.2.10:22,192.0.2.11:22,192.0.2.12:22" \
+SEALOS_V2_NODES="192.0.2.20:22,192.0.2.21:22" \
+SEALOS_V2_SSH_KEY="$HOME/.ssh/id_rsa" \
+./install-v2.sh
+```
+
+<Note>
+  All master and node IPs must be reachable from the machine running the installer via SSH. The installer uses the sealos CLI to distribute cluster images and run Kubernetes bootstrap commands on each node without requiring Ansible or any additional tooling.
+</Note>
+
+## Offline / air-gap installation
+
+Sealos supports offline installation. Each component is packaged as a cluster image that bundles the OCI registry contents for offline delivery. To prepare an offline bundle:
+
+1. On a machine with internet access, pull all required images using `sealos registry save`.
+2. Transfer the registry directory to your air-gapped environment.
+3. Run the installer pointing to your local registry with `SEALOS_V2_IMAGE_REPO`.
+
+Refer to the `deploy/cloud/init.sh` script in the Sealos repository for the canonical list of images required for an offline build.
+
+## Verifying the installation log
+
+The installer writes a timestamped log of every command it runs to:
+
+```
+/root/.sealos/cloud/install.log
+```
+
+If the installation fails, inspect this file to identify the exact command that failed:
+
+```bash
+cat /root/.sealos/cloud/install.log
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="sliders" href="/self-hosting/configuration">
+    Set up your custom domain, bring your own TLS certificate, and configure payment providers.
+  </Card>
+  <Card title="Upgrading" icon="arrow-up-circle" href="/self-hosting/upgrade">
+    Learn how to upgrade your self-hosted cluster and Sealos cloud components.
+  </Card>
+</CardGroup>

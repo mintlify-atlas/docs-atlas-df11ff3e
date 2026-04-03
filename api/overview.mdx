@@ -1,0 +1,125 @@
+---
+title: "API overview"
+description: "The Sealos Account API gives programmatic access to billing, account balance, and cost data."
+---
+
+## What is the Account API?
+
+The Sealos Account API is an HTTP service that runs alongside every Sealos region. It gives programmatic access to:
+
+- Account balance and credit information
+- Cost history broken down by app, namespace, and resource type
+- Recharge and consumption totals
+- Transfer records between accounts
+- Invoice creation and management
+- Gift code redemption
+- Payment records and status
+
+Every endpoint lives under the `/account/v1alpha1` path prefix. All requests use `POST` with a JSON body, and all responses are JSON.
+
+## Base URL
+
+The API is served on port `2333` of the account service within a Sealos region. When calling from inside a cluster the host is the internal `accountSvc` address for that region. Public-facing deployments typically proxy this behind a domain:
+
+```
+https://<region-domain>/account/v1alpha1
+```
+
+For local development the default host is `localhost:2333`.
+
+## Authentication
+
+Every request must carry a valid JWT in the `Authorization` header:
+
+```
+Authorization: Bearer <token>
+```
+
+Tokens are short-lived JWTs issued by the Sealos desktop. See the [Authentication](/api/authentication) page for details on how to obtain and refresh a token.
+
+Requests that arrive without a valid token, or with a token whose claims cannot be resolved to a Sealos user, receive a `401` response.
+
+## Request format
+
+- **Method**: `POST` for all user-facing endpoints.
+- **Content-Type**: `application/json`
+- **Body**: A JSON object. Every endpoint that requires authentication accepts an `owner`, `userUID`, and `userID` field inline, which are populated automatically when the server validates the JWT. You do not need to supply these manually — they are derived from the token.
+
+### Auth fields
+
+Many request bodies include an inline auth object. These fields are filled in server-side from the JWT and are shown here for reference only:
+
+| Field | Type | Description |
+|---|---|---|
+| `owner` | string | Kubernetes user CR name (e.g. `admin`) |
+| `userUID` | UUID | Immutable user identifier |
+| `userID` | string | Human-readable user ID |
+
+### Time range fields
+
+Endpoints that return time-series data accept `startTime` and `endTime` in RFC 3339 / ISO 8601 format. If omitted, `startTime` defaults to six months ago and `endTime` defaults to now.
+
+| Field | Type | Example |
+|---|---|---|
+| `startTime` | string (ISO 8601) | `"2024-01-01T00:00:00Z"` |
+| `endTime` | string (ISO 8601) | `"2024-06-01T00:00:00Z"` |
+
+## Response format
+
+Successful responses return `HTTP 200` with a JSON body. The body shape varies per endpoint, but most wrap their payload in a `data` key:
+
+```json
+{
+  "data": { ... },
+  "message": "human-readable success message"
+}
+```
+
+Error responses include an `error` string:
+
+```json
+{
+  "error": "description of what went wrong"
+}
+```
+
+## Error codes
+
+| Status | Meaning |
+|---|---|
+| `400 Bad Request` | The request body could not be parsed or a required field is missing. |
+| `401 Unauthorized` | The JWT is missing, expired, or invalid. |
+| `403 Forbidden` | Authentication succeeded but the caller lacks permission for this operation (for example, applying an invoice with no eligible payments). |
+| `500 Internal Server Error` | A server-side error occurred. The `error` field in the body contains details. |
+
+## Rate limiting
+
+The Account API does not enforce explicit rate limits at the HTTP layer. However, it is backed by a shared database and is intended for dashboard and tooling use — not for high-frequency polling. Avoid polling individual cost endpoints more frequently than once per minute.
+
+## Quick example
+
+Retrieve the current user's account balance:
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/account \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+```json
+{
+  "account": {
+    "userUID": "550e8400-e29b-41d4-a716-446655440000",
+    "balance": 1000000,
+    "deductionBalance": 500000,
+    "activityBonus": 0,
+    "encryptBalance": "...",
+    "encryptDeductionBalance": "..."
+  }
+}
+```
+
+<Note>
+Monetary amounts are expressed as integers in the smallest currency unit used by the platform (micro-yuan for CNY deployments). Divide by `1,000,000` to get the face-value amount.
+</Note>

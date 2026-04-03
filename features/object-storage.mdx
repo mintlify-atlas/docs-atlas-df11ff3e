@@ -1,0 +1,276 @@
+---
+title: "Object storage"
+description: "S3-compatible object storage built into Sealos. Store files, assets, and backups."
+---
+
+Sealos Object Storage is a fully managed, S3-compatible object store powered by MinIO. You get buckets, access keys, and a familiar API — so any tool or library that works with AWS S3 works with Sealos Object Storage without modification.
+
+Use Object Storage for:
+
+- Static assets (images, videos, documents) served to your users
+- Application-generated file uploads
+- Database backups and data exports
+- Large datasets that don't belong in a relational database
+
+## Creating a bucket
+
+<Steps>
+  <Step title="Open Object Storage">
+    From the Sealos desktop, click **Object Storage**.
+  </Step>
+  <Step title="Click Create Bucket">
+    Click **Create Bucket** in the top-right corner.
+  </Step>
+  <Step title="Name your bucket">
+    Enter a bucket name. Names must be lowercase, alphanumeric, and may include hyphens. The name becomes part of the bucket's endpoint URL, so choose something descriptive.
+  </Step>
+  <Step title="Set access policy">
+    Choose one of the three access modes:
+
+    | Policy | Description |
+    |---|---|
+    | **Private** | Only authenticated requests with valid access keys can read or write objects |
+    | **Public Read** | Anyone can read objects; writes require authentication |
+    | **Public Read/Write** | Anyone can read and write objects without authentication |
+
+    Use **Private** for sensitive files, user uploads, and backups. Use **Public Read** for static assets you want to serve directly from the bucket URL.
+  </Step>
+  <Step title="Confirm">
+    Click **Create**. Your bucket appears in the list within a few seconds.
+  </Step>
+</Steps>
+
+## Uploading and managing files
+
+### Using the built-in file browser
+
+The Object Storage dashboard includes a file browser for managing objects without writing any code:
+
+1. Click your bucket name to open it.
+2. Click **Upload** to select files from your local machine.
+3. Use the **New Folder** button to create a logical prefix (MinIO uses `/`-delimited key prefixes to simulate directories).
+4. Click a file to download it, copy its URL, or delete it.
+
+### Using the AWS CLI
+
+Install the AWS CLI and configure it with your Sealos access keys:
+
+```bash
+aws configure
+# AWS Access Key ID: <your-access-key>
+# AWS Secret Access Key: <your-secret-key>
+# Default region name: us-east-1
+# Default output format: json
+```
+
+Then use the `--endpoint-url` flag to point the CLI at Sealos:
+
+```bash
+# List buckets
+aws s3 ls --endpoint-url https://objectstorageapi.example.sealos.run
+
+# Upload a file
+aws s3 cp ./myfile.txt s3://my-bucket/myfile.txt \
+  --endpoint-url https://objectstorageapi.example.sealos.run
+
+# Sync a local directory to a bucket
+aws s3 sync ./dist s3://my-bucket/dist \
+  --endpoint-url https://objectstorageapi.example.sealos.run
+
+# Download a file
+aws s3 cp s3://my-bucket/myfile.txt ./myfile.txt \
+  --endpoint-url https://objectstorageapi.example.sealos.run
+```
+
+<Note>
+  Find your endpoint URL in the Object Storage dashboard under **Access Info**. It looks like `https://objectstorageapi.<your-sealos-domain>`.
+</Note>
+
+## Access keys
+
+Each Sealos workspace has one set of object storage credentials — an access key and a secret key — shared across all buckets in your workspace. Bucket-level access control is managed through bucket policies (private, public read, public read/write), not per-key permissions.
+
+### Retrieving your access keys
+
+1. Open Object Storage from the Sealos desktop.
+2. Click **Access Info** (or the key icon) in the top navigation.
+3. Copy the **Access Key** and **Secret Key** values.
+
+### Rotating your secret key
+
+If you suspect your secret key has been compromised:
+
+1. Click **Access Info**.
+2. Click **Rotate Secret Key**.
+3. Sealos generates a new secret key immediately. Update all applications and scripts that use the old key before they stop working.
+
+<Warning>
+  Rotating the secret key invalidates the previous key immediately. Any application still using the old key will receive authentication errors until you update it.
+</Warning>
+
+## Connecting with the AWS SDK
+
+The following examples show how to connect to Sealos Object Storage using the AWS SDK for JavaScript and Python. Replace the placeholder values with your actual endpoint, access key, and secret key from the dashboard.
+
+<CodeGroup>
+
+```javascript node.js
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { readFileSync } from "fs";
+
+const client = new S3Client({
+  endpoint: "https://objectstorageapi.example.sealos.run",
+  region: "us-east-1", // required by the SDK; value is ignored by MinIO
+  credentials: {
+    accessKeyId: process.env.SEALOS_ACCESS_KEY,
+    secretAccessKey: process.env.SEALOS_SECRET_KEY,
+  },
+  forcePathStyle: true, // required for MinIO-compatible endpoints
+});
+
+// Upload a file
+async function uploadFile(bucketName, objectKey, filePath) {
+  const fileContent = readFileSync(filePath);
+
+  await client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: objectKey,
+    Body: fileContent,
+  }));
+
+  console.log(`Uploaded ${objectKey} to ${bucketName}`);
+}
+
+// Download a file
+async function downloadFile(bucketName, objectKey) {
+  const response = await client.send(new GetObjectCommand({
+    Bucket: bucketName,
+    Key: objectKey,
+  }));
+
+  const body = await response.Body.transformToString();
+  return body;
+}
+
+await uploadFile("my-bucket", "hello.txt", "./hello.txt");
+```
+
+```python python
+import boto3
+import os
+
+client = boto3.client(
+    "s3",
+    endpoint_url="https://objectstorageapi.example.sealos.run",
+    aws_access_key_id=os.environ["SEALOS_ACCESS_KEY"],
+    aws_secret_access_key=os.environ["SEALOS_SECRET_KEY"],
+    region_name="us-east-1",  # required by boto3; ignored by MinIO
+)
+
+# Upload a file
+def upload_file(bucket_name: str, object_key: str, file_path: str) -> None:
+    client.upload_file(file_path, bucket_name, object_key)
+    print(f"Uploaded {object_key} to {bucket_name}")
+
+# Download a file
+def download_file(bucket_name: str, object_key: str, dest_path: str) -> None:
+    client.download_file(bucket_name, object_key, dest_path)
+    print(f"Downloaded {object_key} to {dest_path}")
+
+# List objects in a bucket
+def list_objects(bucket_name: str) -> list[str]:
+    response = client.list_objects_v2(Bucket=bucket_name)
+    return [obj["Key"] for obj in response.get("Contents", [])]
+
+upload_file("my-bucket", "data/report.csv", "./report.csv")
+print(list_objects("my-bucket"))
+```
+
+```go go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+func main() {
+	endpoint := "https://objectstorageapi.example.sealos.run"
+	accessKey := os.Getenv("SEALOS_ACCESS_KEY")
+	secretKey := os.Getenv("SEALOS_SECRET_KEY")
+
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion("us-east-1"),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			accessKey, secretKey, "",
+		)),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(endpoint)
+		o.UsePathStyle = true // required for MinIO-compatible endpoints
+	})
+
+	// List buckets
+	result, err := client.ListBuckets(context.TODO(), &s3.ListBucketsInput{})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, bucket := range result.Buckets {
+		fmt.Println(*bucket.Name)
+	}
+}
+```
+
+</CodeGroup>
+
+<Tip>
+  Always set `forcePathStyle: true` (JavaScript) or `UsePathStyle: true` (Go) when connecting to MinIO-compatible endpoints. Without this flag, the SDK constructs bucket-style URLs (`bucket.endpoint`) that MinIO doesn't support.
+</Tip>
+
+## Public vs private bucket configuration
+
+### Private bucket (default)
+
+All requests require a valid access key and secret key. Use this for:
+
+- User-generated content (profile photos, documents)
+- Internal backups
+- Any data that should not be publicly accessible
+
+### Public read bucket
+
+Objects are readable by anyone with the direct URL, but writes still require authentication. Use this for:
+
+- Static website assets (CSS, JS, images)
+- Public file downloads
+- CDN-sourced content
+
+To serve a file from a public-read bucket, construct the URL as:
+
+```
+https://objectstorageapi.example.sealos.run/my-bucket/path/to/file.png
+```
+
+### Public read/write bucket
+
+Both reads and writes are open to anyone without authentication.
+
+<Warning>
+  Public read/write buckets have no access control. Anyone on the internet can upload arbitrary files to your bucket. Only use this policy in controlled development environments, never in production.
+</Warning>
+
+## Storage quota
+
+Your workspace has a storage quota. You can see current usage — total size and object count — in the Object Storage dashboard under the quota indicator. Contact your Sealos administrator to increase your quota limit.

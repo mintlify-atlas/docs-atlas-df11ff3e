@@ -1,0 +1,199 @@
+---
+title: "Contributing"
+description: "How to contribute to Sealos — bug reports, pull requests, and development setup."
+---
+
+Contributions of all kinds are welcome. This page covers how to report issues, open pull requests, follow code style guidelines, run tests, and set up a local development environment.
+
+## Reporting bugs
+
+Open an issue on GitHub at [labring/sealos/issues/new/choose](https://github.com/labring/sealos/issues/new/choose). Three issue templates are available:
+
+- **Bug report** — for reproducible defects
+- **Feature request** — for new functionality
+- **Question** — for anything else
+
+Before opening a new issue, search the existing list to avoid duplicates. If you find an existing issue that matches yours, add your details in a comment instead of creating a new one.
+
+When filing a bug report:
+
+- Include a precise description of the problem and steps to reproduce it.
+- Attach relevant logs, error messages, or screenshots.
+- Remove all sensitive data (passwords, secret keys, private IP addresses, business data) from your post before submitting.
+
+### Security vulnerabilities
+
+Do **not** open a public issue for security vulnerabilities. Send a private email to [security@sealos.io](mailto:security@sealos.io) instead.
+
+## Submitting a pull request
+
+### 1. Fork and clone
+
+Fork [labring/sealos](https://github.com/labring/sealos) to your GitHub account, then clone your fork locally:
+
+```bash
+git clone https://github.com/<your-username>/sealos.git
+cd sealos
+```
+
+### 2. Set the upstream remote
+
+```bash
+git remote add upstream https://github.com/labring/sealos.git
+git remote set-url --push upstream no-pushing
+```
+
+Verify the configuration:
+
+```bash
+git remote -v
+# origin     https://github.com/<your-username>/sealos.git (fetch)
+# origin     https://github.com/<your-username>/sealos.git (push)
+# upstream   https://github.com/labring/sealos.git (fetch)
+# upstream   no-pushing (push)
+```
+
+### 3. Create a branch
+
+Always branch from the latest `main`:
+
+```bash
+git fetch upstream
+git checkout main
+git checkout -b <your-branch-name>
+```
+
+Make your changes on the new branch, then build and test locally before committing.
+
+### 4. Commit your changes
+
+Lint before committing, and sign off every commit:
+
+```bash
+git rebase upstream/main
+golangci-lint run -c .golangci.yml
+git add -A
+git commit -s -m "<type>: <short description>"
+```
+
+The `-s` flag adds a `Signed-off-by` trailer required by the project's CLA.
+
+### 5. Push and open the PR
+
+Squash your work into a single commit when possible, then push:
+
+```bash
+git fetch upstream main
+git rebase upstream/main
+git rebase -i <first-commit-id>  # squash into one commit
+git push --set-upstream origin <your-branch-name>
+```
+
+Open a pull request targeting `labring/sealos:main`. Fill in the PR template — reviewers rely on a detailed description to understand the purpose of your change.
+
+## Code style guidelines
+
+### Commit message format
+
+Use a short, descriptive commit message with one of these type prefixes:
+
+| Prefix | When to use |
+|---|---|
+| `docs:` | Documentation changes |
+| `feature:` | New functionality |
+| `bugfix:` | Bug fixes |
+| `style:` | Formatting / code style (no logic change) |
+| `refactor:` | Code restructuring with no behavior change |
+| `test:` | Adding or improving tests |
+| `chore:` | Maintenance tasks (CI, build, tooling) |
+
+Good example: `bugfix: fix panic when input nil parameter`
+
+Avoid vague messages like `fix bug`, `update`, or `add doc`.
+
+### Commit content
+
+Each commit should be self-contained — it should compile, pass CI, and be reviewable on its own without depending on a future commit to complete the picture. Avoid very large, multi-concern commits.
+
+### Documentation formatting
+
+When editing Markdown or MDX documentation:
+
+- Use upper case for the first letter of sentences and headings.
+- Specify a language tag for every code block.
+- Use correct technical capitalization: `HTTP`, `Kubernetes`, `MySQL`, not `http`, `kubernetes`, `mysql`.
+- Insert a space between Chinese and English words.
+- Do not use Chinese punctuation in English text.
+
+## Running tests
+
+The project uses standard Go tooling:
+
+```bash
+# Run all tests in a package
+go test ./service/account/...
+
+# Run tests with verbose output
+go test -v ./service/account/...
+
+# Run a specific test
+go test -run TestMyFunction ./service/account/api/...
+```
+
+Lint all Go code before submitting:
+
+```bash
+golangci-lint run -c .golangci.yml
+```
+
+## Development setup
+
+### Requirements
+
+| Tool | Minimum version |
+|---|---|
+| Go | 1.16 |
+| golangci-lint | 1.46.2 |
+| Docker | any recent stable |
+
+### Building
+
+The project uses a `Makefile` with Docker-based build targets to ensure a consistent environment:
+
+```bash
+# Build using the Makefile
+make build
+
+# Or build directly with Go
+go build ./...
+```
+
+Using `make` is recommended because it handles cross-compilation and dependency resolution through Docker, reducing environment-specific issues.
+
+### Account service development
+
+The account service lives in `service/account/`. To run it locally:
+
+1. Set the required environment variables (see `helper/common.go` for names):
+   - `MONGO_URI` — MongoDB connection string
+   - `GLOBAL_COCKROACH_URI` / `LOCAL_COCKROACH_URI` — CockroachDB URIs
+   - `LOCAL_REGION` — region domain for this instance
+   - `ACCOUNT_API_JWT_SECRET` — secret used to sign and verify JWTs
+
+2. Start the service:
+
+   ```bash
+   go run ./service/account/main.go
+   ```
+
+   The service listens on port `2333` by default.
+
+3. The Swagger UI is available at `http://localhost:2333/swagger/index.html`.
+
+## License and contributor agreement
+
+Sealos is licensed under the **Sealos Sustainable Use License** — a custom license that permits internal business use and personal non-commercial use, but prohibits providing Sealos as a cloud service to third parties without permission.
+
+By submitting any contribution you automatically accept the terms of the [Contributor License Agreement (CLA)](https://github.com/labring/sealos/blob/main/CONTRIBUTOR_LICENSE_AGREEMENT.md). The CLA grants labring a perpetual, worldwide, royalty-free license to use, modify, and distribute your contributions, and the right to change the project license in the future.
+
+If you do not agree to these terms, do not contribute to this project.

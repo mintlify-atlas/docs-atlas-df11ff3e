@@ -1,0 +1,257 @@
+---
+title: "AI Proxy"
+description: "Unified API gateway for LLM providers. Use OpenAI, and other models with one endpoint and key."
+---
+
+AI Proxy is an OpenAI-compatible LLM gateway built into Sealos. Instead of managing separate API keys, rate limits, and billing relationships for every AI provider you use, you create a single AI Proxy token and route all your LLM requests through one endpoint.
+
+Use AI Proxy when you want to:
+
+- Access multiple LLM providers through a single OpenAI-compatible API
+- Manage usage and spending across your team with per-token quotas
+- Track request counts, token usage, and costs in one dashboard
+- Apply rate limits to prevent runaway usage
+
+## How AI Proxy works
+
+AI Proxy sits between your application and the underlying LLM provider channels. When your application sends a chat completion request, AI Proxy:
+
+1. Authenticates your token
+2. Checks your quota and rate limits
+3. Routes the request to the appropriate provider channel based on the model you requested
+4. Returns the response in standard OpenAI API format
+
+Your application never needs to know which provider is serving a given model. You can switch providers or add new ones without changing any application code.
+
+## Creating an API key
+
+<Steps>
+  <Step title="Open AI Proxy">
+    From the Sealos desktop, click **AI Proxy**.
+  </Step>
+  <Step title="Go to Tokens">
+    Click the **Tokens** tab in the left sidebar.
+  </Step>
+  <Step title="Create a new token">
+    Click **New Token**.
+  </Step>
+  <Step title="Configure the token">
+    Fill in the token settings:
+
+    | Field | Description |
+    |---|---|
+    | **Name** | A human-readable label for this token (e.g., `production-app`, `dev-testing`) |
+    | **Quota** | Maximum total token spend allowed. Set to `-1` for unlimited. |
+    | **Expiry** | Optional expiration date. Expired tokens stop working automatically. |
+    | **Models** | Optional allowlist of models this token can access. Leave empty to allow all models. |
+    | **Subnet** | Optional IP subnet restriction for additional security. |
+  </Step>
+  <Step title="Save the token">
+    Click **Create**. The token key (`sk-...`) is shown once. Copy it now — you cannot retrieve it again.
+  </Step>
+</Steps>
+
+<Warning>
+  Store your token key securely. AI Proxy only shows the full key at creation time. If you lose it, delete the token and create a new one.
+</Warning>
+
+## Making your first request
+
+AI Proxy implements the OpenAI API specification. You can use the OpenAI SDK or any HTTP client — just point the base URL at your AI Proxy endpoint and use your token as the API key.
+
+### Finding your endpoint
+
+The AI Proxy endpoint for your Sealos instance is shown at the top of the AI Proxy dashboard. It follows the pattern:
+
+```
+https://aiproxy.example.sealos.run/v1
+```
+
+### Using the OpenAI SDK
+
+<CodeGroup>
+
+```python python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="sk-your-aiproxy-token",
+    base_url="https://aiproxy.example.sealos.run/v1",
+)
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Explain Kubernetes in one paragraph."},
+    ],
+)
+
+print(response.choices[0].message.content)
+```
+
+```javascript node.js
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "sk-your-aiproxy-token",
+  baseURL: "https://aiproxy.example.sealos.run/v1",
+});
+
+const response = await client.chat.completions.create({
+  model: "gpt-4o",
+  messages: [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user", content: "Explain Kubernetes in one paragraph." },
+  ],
+});
+
+console.log(response.choices[0].message.content);
+```
+
+```bash curl
+curl https://aiproxy.example.sealos.run/v1/chat/completions \
+  -H "Authorization: Bearer sk-your-aiproxy-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Explain Kubernetes in one paragraph."}
+    ]
+  }'
+```
+
+```go go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	openai "github.com/sashabaranov/go-openai"
+)
+
+func main() {
+	config := openai.DefaultConfig("sk-your-aiproxy-token")
+	config.BaseURL = "https://aiproxy.example.sealos.run/v1"
+	client := openai.NewClientWithConfig(config)
+
+	resp, err := client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: openai.GPT4o,
+			Messages: []openai.ChatCompletionMessage{
+				{Role: openai.ChatMessageRoleSystem, Content: "You are a helpful assistant."},
+				{Role: openai.ChatMessageRoleUser, Content: "Explain Kubernetes in one paragraph."},
+			},
+		},
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(resp.Choices[0].Message.Content)
+}
+```
+
+</CodeGroup>
+
+<Note>
+  The response format is identical to the OpenAI API. Any code that already works with OpenAI works with AI Proxy — the only change is the `base_url` and `api_key`.
+</Note>
+
+## Supported providers
+
+AI Proxy routes requests to backend provider channels configured by your Sealos administrator. The channel system supports any OpenAI-compatible API, which includes most major LLM providers.
+
+Available models depend on which channels your administrator has configured. To see available models, query the models endpoint:
+
+```bash
+curl https://aiproxy.example.sealos.run/v1/models \
+  -H "Authorization: Bearer sk-your-aiproxy-token"
+```
+
+The response lists all models your token is permitted to use.
+
+## Usage tracking
+
+The AI Proxy dashboard gives you visibility into how your tokens are consuming resources.
+
+### Dashboard overview
+
+The **Dashboard** tab shows aggregated metrics across all your tokens:
+
+| Metric | Description |
+|---|---|
+| **Total requests** | Number of API calls made |
+| **Exceptions** | Requests that resulted in an error |
+| **Token usage** | Input tokens, output tokens, and total tokens consumed |
+| **RPM / TPM** | Requests per minute and tokens per minute (current and peak) |
+| **Used amount** | Total spend in quota units |
+
+You can filter the dashboard by time range and break down metrics by individual token or model.
+
+### Request logs
+
+The **Logs** tab records every request processed by AI Proxy. Each log entry includes:
+
+- Timestamp and request ID
+- Model and channel used
+- Token (API key) that made the request
+- Input and output token counts
+- Response code (success or error)
+- Endpoint called
+
+Use logs to debug failed requests, audit usage, or identify which parts of your application are the most expensive.
+
+## Quotas and rate limits
+
+### Token quota
+
+Each token has a quota measured in token-spend units. When a token's `used_amount` reaches its `quota`, all subsequent requests return a `429 Too Many Requests` error until the quota is reset or increased.
+
+To adjust a token's quota:
+
+1. Open the **Tokens** tab.
+2. Click the edit icon next to the token.
+3. Update the **Quota** field and save.
+
+Setting the quota to `-1` removes the limit for that token.
+
+### Rate limits
+
+AI Proxy enforces rate limits per model to protect provider channels from overload. Rate limit parameters are visible in the model configuration:
+
+| Parameter | Description |
+|---|---|
+| **RPM** | Maximum requests per minute for this model |
+| **TPM** | Maximum tokens per minute for this model |
+
+When you exceed a rate limit, AI Proxy returns a `429` response. Your application should implement exponential backoff and retry on `429` errors.
+
+<Tip>
+  Use separate tokens for different applications or environments (production, staging, development). This lets you set per-environment quotas, track usage independently, and revoke access for a specific environment without affecting others.
+</Tip>
+
+## Managing multiple tokens
+
+<AccordionGroup>
+  <Accordion title="Checking token status and usage">
+    Each token in the **Tokens** list shows:
+    - **Status** — enabled or disabled
+    - **Used amount** vs **Quota** — how much of the quota has been consumed
+    - **Request count** — total requests made with this token
+    - **Last accessed** — when the token was most recently used
+  </Accordion>
+  <Accordion title="Disabling a token">
+    To temporarily block a token without deleting it, open the token and toggle its status to **Disabled**. All requests using the token will return `401 Unauthorized` until you re-enable it.
+  </Accordion>
+  <Accordion title="Restricting a token to specific models">
+    When creating or editing a token, set the **Models** field to a comma-separated list of model names. The token will only be able to call those models. Requests for any other model return `403 Forbidden`.
+  </Accordion>
+  <Accordion title="Expiring a token automatically">
+    Set an **Expiry** date on a token to have it automatically deactivate on that date. This is useful for giving contractors or external collaborators time-limited API access without relying on manual revocation.
+  </Accordion>
+</AccordionGroup>

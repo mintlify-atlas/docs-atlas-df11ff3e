@@ -1,0 +1,333 @@
+---
+title: "Transfers and payments"
+description: "Transfer credits between accounts and manage payment records."
+---
+
+## Transfer credits
+
+Transfers a specified amount of credits from the authenticated user's account to another user.
+
+**`POST /account/v1alpha1/transfer`**
+
+<ParamField body="amount" type="integer" required>
+  Amount to transfer, in the platform's smallest monetary unit. For example, `100000000` represents 100 credits. Required unless `transferAll` is `true`.
+</ParamField>
+<ParamField body="toUser" type="string" required>
+  The user ID of the recipient.
+</ParamField>
+<ParamField body="transferAll" type="boolean">
+  If `true`, transfers the entire available balance to the recipient. When set, `amount` is ignored.
+</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/transfer \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": 100000000,
+    "toUser": "alice"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "message": "successfully transfer amount"
+}
+```
+
+<Note>
+If the caller's balance is insufficient the server returns `200 OK` with the message `"insufficient balance, skip transfer"` rather than an error status. Check the response body to confirm the transfer actually occurred.
+</Note>
+
+<ResponseField name="message" type="string">
+  `"successfully transfer amount"` on success, or `"insufficient balance, skip transfer"` when the balance is too low.
+</ResponseField>
+
+---
+
+## Get transfer history
+
+Returns a paginated list of transfer records for the authenticated user, with optional filtering by direction, time range, or a specific transfer ID.
+
+**`POST /account/v1alpha1/get-transfer`**
+
+<ParamField body="type" type="integer">
+  Direction filter. `0` = all transfers (default), `1` = transfers received (in), `2` = transfers sent (out).
+</ParamField>
+<ParamField body="transferID" type="string">
+  Filter to a specific transfer by its ID.
+</ParamField>
+<ParamField body="startTime" type="string">
+  Start of the time range in ISO 8601 format.
+</ParamField>
+<ParamField body="endTime" type="string">
+  End of the time range in ISO 8601 format.
+</ParamField>
+<ParamField body="page" type="integer">
+  Page number (1-based). Defaults to `1`.
+</ParamField>
+<ParamField body="pageSize" type="integer">
+  Records per page. Defaults to `10`.
+</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/get-transfer \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": 0,
+    "startTime": "2024-01-01T00:00:00Z",
+    "endTime":   "2024-06-01T00:00:00Z",
+    "page": 1,
+    "pageSize": 10
+  }'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "transfers": [
+      {
+        "id": "transfer-uuid-1",
+        "fromUserID": "admin",
+        "toUserID":   "alice",
+        "amount":     100000000,
+        "remark":     "",
+        "createdAt":  "2024-03-15T10:00:00Z"
+      }
+    ],
+    "total": 1,
+    "totalPage": 1
+  }
+}
+```
+
+<ResponseField name="data.transfers" type="array">
+  List of transfer records.
+
+  <Expandable title="transfer fields">
+    <ResponseField name="id" type="string">Unique transfer ID.</ResponseField>
+    <ResponseField name="fromUserID" type="string">User ID of the sender.</ResponseField>
+    <ResponseField name="toUserID" type="string">User ID of the recipient.</ResponseField>
+    <ResponseField name="amount" type="integer">Amount transferred in the smallest monetary unit.</ResponseField>
+    <ResponseField name="remark" type="string">Optional note attached to the transfer.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp when the transfer was created.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="data.total" type="integer">Total number of matching transfer records.</ResponseField>
+<ResponseField name="data.totalPage" type="integer">Total number of pages.</ResponseField>
+
+---
+
+## Get payments
+
+Returns a paginated list of payment (top-up) records for the authenticated user, with optional filtering by payment ID or invoice status.
+
+**`POST /account/v1alpha1/payment`**
+
+<ParamField body="paymentID" type="string">
+  Filter to a specific payment by its ID.
+</ParamField>
+<ParamField body="invoiced" type="boolean">
+  Filter by invoice status. `true` returns only invoiced payments, `false` returns only uninvoiced payments. Omit to return all.
+</ParamField>
+<ParamField body="page" type="integer">
+  Page number (1-based). Defaults to `1`.
+</ParamField>
+<ParamField body="pageSize" type="integer">
+  Records per page. Defaults to `10`.
+</ParamField>
+<ParamField body="startTime" type="string">
+  Start of the time range in ISO 8601 format.
+</ParamField>
+<ParamField body="endTime" type="string">
+  End of the time range in ISO 8601 format.
+</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/payment \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "invoiced": false,
+    "page": 1,
+    "pageSize": 20
+  }'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "payments": [
+      {
+        "id": "payment-uuid-1",
+        "userUID": "550e8400-e29b-41d4-a716-446655440000",
+        "amount": 100000000,
+        "gift": 0,
+        "method": "stripe",
+        "status": "SUCCESS",
+        "invoiced": false,
+        "createdAt": "2024-04-01T12:00:00Z"
+      }
+    ],
+    "total": 1,
+    "totalPage": 1
+  }
+}
+```
+
+<ResponseField name="data.payments" type="array">
+  List of payment records.
+
+  <Expandable title="payment fields">
+    <ResponseField name="id" type="string">Unique payment ID.</ResponseField>
+    <ResponseField name="userUID" type="string">UUID of the user who made the payment.</ResponseField>
+    <ResponseField name="amount" type="integer">Amount paid in the smallest monetary unit.</ResponseField>
+    <ResponseField name="gift" type="integer">Bonus credits granted with this payment.</ResponseField>
+    <ResponseField name="method" type="string">Payment method (e.g. `"stripe"`, `"balance"`).</ResponseField>
+    <ResponseField name="status" type="string">Payment status (e.g. `"SUCCESS"`).</ResponseField>
+    <ResponseField name="invoiced" type="boolean">`true` if this payment has been applied to an invoice.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp of the payment.</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="data.total" type="integer">Total number of matching payment records.</ResponseField>
+<ResponseField name="data.totalPage" type="integer">Total number of pages.</ResponseField>
+
+---
+
+## Get payment status
+
+Returns the current status of a single payment by its ID.
+
+**`POST /account/v1alpha1/payment/status`**
+
+<ParamField body="payID" type="string" required>
+  The payment ID whose status to retrieve.
+</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/payment/status \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "payID": "payment-uuid-1"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "status": "SUCCESS"
+  }
+}
+```
+
+<ResponseField name="data.status" type="string">
+  The current status of the payment. Common values: `"SUCCESS"`, `"PENDING"`, `"FAILED"`.
+</ResponseField>
+
+---
+
+## Use gift code
+
+Redeems a gift code and applies the associated credits to the authenticated user's account.
+
+**`POST /account/v1alpha1/gift-code/use`**
+
+<ParamField body="code" type="string" required>
+  The gift code string to redeem. Example: `"HAPPY2024"`.
+</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/gift-code/use \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "HAPPY2024"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "data": {
+    "userID": "admin"
+  },
+  "message": "Gift code successfully redeemed"
+}
+```
+
+<ResponseField name="data.userID" type="string">
+  The ID of the user whose account received the gift code credit.
+</ResponseField>
+<ResponseField name="message" type="string">
+  Confirmation message: `"Gift code successfully redeemed"`.
+</ResponseField>
+
+---
+
+## Get invoice payments
+
+Returns the list of payment records associated with a specific invoice.
+
+**`POST /account/v1alpha1/invoice/get-payment`**
+
+<ParamField body="invoiceID" type="string" required>
+  The invoice ID whose payments to retrieve.
+</ParamField>
+
+### Example request
+
+```bash
+curl -X POST https://<region-domain>/account/v1alpha1/invoice/get-payment \
+  -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "invoiceID": "invoice-id-1"
+  }'
+```
+
+### Example response
+
+```json
+{
+  "data": [
+    {
+      "id": "payment-uuid-1",
+      "amount": 100000000,
+      "status": "SUCCESS",
+      "createdAt": "2024-04-01T12:00:00Z"
+    }
+  ]
+}
+```
+
+<ResponseField name="data" type="array">
+  List of payment records linked to the invoice.
+
+  <Expandable title="payment fields">
+    <ResponseField name="id" type="string">Payment ID.</ResponseField>
+    <ResponseField name="amount" type="integer">Payment amount in the smallest monetary unit.</ResponseField>
+    <ResponseField name="status" type="string">Payment status.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 payment timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>

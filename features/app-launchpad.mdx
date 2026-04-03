@@ -1,0 +1,168 @@
+---
+title: "App Launchpad"
+description: "Deploy any Docker image to production with one click. Auto-scaling, HTTPS, and custom domains included."
+---
+
+App Launchpad takes a Docker image and turns it into a production deployment — a Kubernetes `Deployment` backed by a `Service` and an `Ingress` — without requiring you to write any YAML or understand cluster internals. You get HTTPS, a public domain, horizontal auto-scaling, and live logs out of the box.
+
+Use App Launchpad when you want to:
+
+- Deploy a containerized application from any registry
+- Expose a web service with a public HTTPS endpoint
+- Scale pods horizontally based on CPU or memory usage
+- Manage multiple deployments from a single dashboard
+
+## Deploying a Docker image
+
+<Steps>
+  <Step title="Open App Launchpad">
+    From the Sealos desktop, click **App Launchpad**. You'll see a list of your existing deployments (empty on first use).
+  </Step>
+  <Step title="Click New Application">
+    Click **New Application** in the top-right corner.
+  </Step>
+  <Step title="Enter the image name">
+    Paste your Docker image reference into the **Image** field. For example: `nginx:latest`, `ghcr.io/your-org/your-app:v1.2.3`, or a private registry image.
+
+    If your image is from a private registry, enable **Private Registry** and enter your registry URL, username, and password.
+  </Step>
+  <Step title="Set CPU and memory">
+    Choose how much CPU (in cores) and memory (in GiB) each replica should receive. App Launchpad translates these into Kubernetes resource requests and limits.
+  </Step>
+  <Step title="Set the replica count">
+    Enter the number of replicas. For a fixed deployment, set a single number. To enable auto-scaling, you'll configure min and max replicas in the scaling step.
+  </Step>
+  <Step title="Configure ports, environment, and volumes">
+    See the sections below for details on each configuration area.
+  </Step>
+  <Step title="Deploy">
+    Click **Deploy Application**. App Launchpad creates the Kubernetes resources and your app becomes accessible at the generated domain within seconds.
+  </Step>
+</Steps>
+
+## Configuring ports and public access
+
+Each application can expose one or more ports. For every port you add, you can choose whether to make it publicly accessible:
+
+| Setting | Description |
+|---|---|
+| **Port** | The container port your application listens on |
+| **Protocol** | HTTP, gRPC, or WebSocket |
+| **Public domain** | Enable to get an auto-generated HTTPS subdomain |
+| **Custom domain** | Point your own domain to this application |
+
+When you enable the public domain, Sealos provisions a TLS certificate automatically via cert-manager. Traffic reaches your container over HTTPS with no additional configuration.
+
+### Adding a custom domain
+
+<Steps>
+  <Step title="Enable public access">
+    Toggle **Open Public Access** for the port you want to expose.
+  </Step>
+  <Step title="Enter your domain">
+    In the **Custom Domain** field, enter the fully-qualified domain name (e.g., `app.example.com`).
+  </Step>
+  <Step title="Update your DNS">
+    Add a `CNAME` record pointing your domain to the generated Sealos domain shown in the field. Propagation typically takes a few minutes.
+  </Step>
+</Steps>
+
+<Note>
+  TLS certificates for custom domains are provisioned automatically once the DNS record resolves. There is no manual certificate upload step.
+</Note>
+
+## Environment variables
+
+Pass configuration to your container through environment variables:
+
+```yaml
+# Example environment variables
+DATABASE_URL: postgresql://user:pass@host:5432/db
+REDIS_URL: redis://host:6379
+APP_ENV: production
+PORT: "8080"
+```
+
+In the App Launchpad form, add each variable as a key-value pair. Variables are injected into every replica's environment and are available to your application at runtime.
+
+## Persistent volumes
+
+If your application writes data that must survive pod restarts (uploads, SQLite databases, cache directories), attach a persistent volume:
+
+1. In the **Storage** section, click **Add Volume**.
+2. Enter the **mount path** — the directory inside the container where the volume will be mounted (e.g., `/data`).
+3. Set the volume size in GiB.
+
+App Launchpad creates a `PersistentVolumeClaim` and mounts it at the specified path across all replicas.
+
+<Warning>
+  Persistent volumes are shared across all replicas only if your application handles concurrent access. For stateful workloads, run a single replica or use an external database.
+</Warning>
+
+## Auto-scaling
+
+App Launchpad uses Kubernetes `HorizontalPodAutoscaler` (HPA) to scale your deployment automatically based on resource utilization.
+
+<Steps>
+  <Step title="Enable auto-scaling">
+    Toggle **Auto Scaling** in the scaling section.
+  </Step>
+  <Step title="Set replica bounds">
+    Enter the **minimum** and **maximum** number of replicas. The HPA will never scale below the minimum or above the maximum.
+  </Step>
+  <Step title="Choose a scaling target">
+    Select **CPU** or **memory** as the scaling metric, then set the target utilization percentage (e.g., 60% CPU). When average utilization across pods exceeds this threshold, the HPA adds replicas.
+  </Step>
+</Steps>
+
+```yaml
+# What App Launchpad creates under the hood
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+spec:
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+```
+
+## Viewing logs
+
+To view real-time logs from your running pods:
+
+1. Open your application from the App Launchpad dashboard.
+2. Click the **Logs** tab.
+3. Select a specific pod from the dropdown, or view logs aggregated across all replicas.
+
+Logs stream live. You can filter by keyword directly in the log viewer.
+
+## Monitoring resource usage
+
+The **Monitoring** tab shows CPU and memory usage over time for each replica. Use this to:
+
+- Verify your resource limits are sized correctly
+- Identify memory leaks or CPU spikes before they cause pod restarts
+- Decide when to adjust auto-scaling thresholds
+
+## Updating a deployment
+
+To update your application (for example, after pushing a new image tag):
+
+1. Open the application in the App Launchpad dashboard.
+2. Click **Edit**.
+3. Update the image tag or any other configuration.
+4. Click **Deploy**. App Launchpad performs a rolling update — new pods come up before old pods are terminated, so there is no downtime.
+
+## Pausing and resuming
+
+You can pause an application to stop billing for compute without deleting it:
+
+- **Pause**: Sets the replica count to zero. The Deployment and Ingress are preserved; the pods are terminated.
+- **Resume**: Restores the previous replica count. Pods start within seconds.
+
+Persistent volumes are retained when an application is paused.

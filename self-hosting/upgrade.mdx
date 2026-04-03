@@ -1,0 +1,308 @@
+---
+title: "Upgrading"
+description: "Keep your self-hosted Sealos deployment up to date."
+---
+
+Upgrading a self-hosted Sealos deployment involves two distinct operations: upgrading the Kubernetes cluster itself, and upgrading the Sealos cloud components (controllers, frontends, and services). You can perform these independently, but always upgrade Kubernetes before upgrading the Sealos cloud layer.
+
+<Warning>
+  Always back up your databases and take a cluster snapshot before upgrading. Upgrades that modify `sealos-config`, the MongoDB URI, or CockroachDB schema are not reversible without a restore from backup.
+</Warning>
+
+## Check your current version
+
+### Sealos CLI version
+
+```bash
+sealos version
+```
+
+### Kubernetes version
+
+```bash
+kubectl version --short
+```
+
+### Sealos cloud component versions
+
+The Sealos cloud component versions are stored in the images running in your cluster. Check the image tags for any component:
+
+```bash
+kubectl get pods -n sealos -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].image}{"\n"}{end}'
+```
+
+To check the cloud config ConfigMap (which records the domain and region UID, but not the version):
+
+```bash
+kubectl get configmap sealos-config -n sealos-system -o yaml
+```
+
+### Sealos-system components
+
+```bash
+kubectl get pods -n sealos-system
+```
+
+## Upgrade the Kubernetes cluster
+
+Use the sealos CLI to upgrade Kubernetes in place. The sealos `update` command performs a rolling upgrade across all nodes.
+
+<Steps>
+
+<Step title="Pull the target Kubernetes cluster image">
+
+Pull the cluster image for the Kubernetes version you want to upgrade to:
+
+```bash
+sealos pull ghcr.io/labring/kubernetes:v1.28.15
+```
+
+Replace `v1.28.15` with your target version. Check the [Sealos GitHub releases](https://github.com/labring/sealos/releases) for available versions.
+
+</Step>
+
+<Step title="Run the upgrade">
+
+```bash
+sealos update --cluster <cluster-name> \
+  ghcr.io/labring/kubernetes:v1.28.15
+```
+
+If you did not specify a cluster name during installation, the default name is `default`:
+
+```bash
+sealos update --cluster default \
+  ghcr.io/labring/kubernetes:v1.28.15
+```
+
+The upgrade performs a rolling restart of control-plane and worker nodes. Monitor node status during the upgrade:
+
+```bash
+watch kubectl get nodes
+```
+
+<Note>
+  The sealos update command upgrades one minor version at a time. To go from v1.26 to v1.28, you must upgrade to v1.27 first, then to v1.28.
+</Note>
+
+</Step>
+
+<Step title="Verify the upgraded cluster">
+
+After the update completes, confirm all nodes are running the new version:
+
+```bash
+kubectl get nodes -o wide
+```
+
+Check that all system pods are healthy:
+
+```bash
+kubectl get pods -n kube-system
+kubectl get pods -n cilium
+kubectl get pods -n cert-manager
+```
+
+</Step>
+
+</Steps>
+
+## Upgrade Sealos cloud components
+
+The Sealos cloud layer (controllers, frontends, services) runs as container workloads inside the cluster. Upgrading these components means deploying new image versions using `kubectl set image` or by re-running the relevant `sealos run` command with the new image tag.
+
+<Steps>
+
+<Step title="Identify the target cloud version">
+
+Check the [Sealos releases page](https://github.com/labring/sealos/releases) for the latest cloud version. At the time of writing, the current version is `v5.1.0`.
+
+</Step>
+
+<Step title="Pull the new cloud images">
+
+Pull the updated cloud image to your local sealos registry:
+
+```bash
+sealos pull ghcr.io/labring/sealos-cloud:v5.1.0
+```
+
+For offline environments, use `sealos registry save` to export the image to a tar archive and transfer it to your cluster nodes before pulling.
+
+</Step>
+
+<Step title="Deploy the updated cloud components">
+
+Re-run the `sealos run` command for the new cloud version, providing the same environment variables used during installation:
+
+```bash
+sealos run ghcr.io/labring/sealos-cloud:v5.1.0 \
+  --env SEALOS_CLOUD_DOMAIN="cloud.example.com" \
+  --env SEALOS_CLOUD_PORT="443" \
+  --env SEALOS_CLOUD_DIR=/root/.sealos/cloud
+```
+
+This re-applies the Kubernetes manifests from the new cluster image and updates deployments in place.
+
+</Step>
+
+<Step title="Update individual component images">
+
+For fine-grained control, update individual component deployments directly using `kubectl set image`. For example, to upgrade the App Launchpad frontend:
+
+```bash
+kubectl set image deployment/applaunchpad-frontend \
+  -n applaunchpad-frontend \
+  applaunchpad-frontend=ghcr.io/labring/sealos-cloud-applaunchpad-frontend:v5.1.0
+```
+
+Apply the same pattern to other components. The full list of deployment names and image names maps as follows:
+
+| Namespace | Deployment | Image name |
+|---|---|---|
+| `sealos` | `desktop-frontend` | `sealos-cloud-desktop-frontend` |
+| `sealos` | `terminal-frontend` | `sealos-cloud-terminal-frontend` |
+| `applaunchpad-frontend` | `applaunchpad-frontend` | `sealos-cloud-applaunchpad-frontend` |
+| `database-frontend` | `dbprovider-frontend` | `sealos-cloud-dbprovider-frontend` |
+| `costcenter-frontend` | `costcenter-frontend` | `sealos-cloud-costcenter-frontend` |
+| `template-frontend` | `template-frontend` | `sealos-cloud-template-frontend` |
+| `cronjob-frontend` | `cronjob-frontend` | `sealos-cloud-cronjob-frontend` |
+| `user-system` | `user-controller` | `sealos-cloud-user-controller` |
+| `account-system` | `account-controller` | `sealos-cloud-account-controller` |
+| `terminal-system` | `terminal-controller` | `sealos-cloud-terminal-controller` |
+| `app-system` | `app-controller` | `sealos-cloud-app-controller` |
+| `resources-system` | `resources-controller` | `sealos-cloud-resources-controller` |
+
+</Step>
+
+<Step title="Verify the upgrade">
+
+Check that all updated pods come up cleanly:
+
+```bash
+kubectl get pods -n sealos
+kubectl get pods -n sealos-system
+```
+
+Look for any pods stuck in `ImagePullBackOff` (image not found or registry unreachable) or `CrashLoopBackOff` (startup error). Inspect problem pods with:
+
+```bash
+kubectl describe pod <pod-name> -n <namespace>
+kubectl logs <pod-name> -n <namespace> --previous
+```
+
+</Step>
+
+</Steps>
+
+## Renewing TLS certificates
+
+### ACME-issued certificates
+
+If you used ACME for automatic certificate issuance, cert-manager handles renewal automatically. You can check the certificate status with:
+
+```bash
+kubectl get certificate -n sealos-system
+kubectl describe certificate wildcard-cert -n sealos-system
+```
+
+### Self-signed certificates
+
+Self-signed certificates generated by Sealos are valid for **99 years**. You do not need to renew them on a standard schedule.
+
+### Bring-your-own certificates
+
+If you provided your own certificate at install time, renew it before it expires by updating the `wildcard-cert` secret:
+
+```bash
+# Base64-encode your new certificate and key
+NEW_CERT=$(cat /path/to/new.crt | base64 | tr -d '\n')
+NEW_KEY=$(cat /path/to/new.key | base64 | tr -d '\n')
+
+kubectl patch secret wildcard-cert -n sealos-system \
+  --type=json \
+  -p="[
+    {\"op\": \"replace\", \"path\": \"/data/tls.crt\", \"value\": \"${NEW_CERT}\"},
+    {\"op\": \"replace\", \"path\": \"/data/tls.key\", \"value\": \"${NEW_KEY}\"}
+  ]"
+```
+
+Higress picks up the updated secret automatically without a restart.
+
+## Rolling back a failed upgrade
+
+### Rolling back Kubernetes
+
+Kubernetes does not support in-place downgrades. If a Kubernetes upgrade fails, restore your cluster from the snapshot taken before upgrading.
+
+<Warning>
+  A failed Kubernetes upgrade that leaves nodes in a mixed-version state can cause unpredictable behavior in the control plane and scheduler. Restore from backup rather than attempting manual recovery on a mixed-version cluster.
+</Warning>
+
+### Rolling back Sealos cloud components
+
+To roll back a specific component to the previous image version, use `kubectl rollout undo`:
+
+```bash
+kubectl rollout undo deployment/desktop-frontend -n sealos
+```
+
+To roll back all deployments in a namespace to their previous ReplicaSet:
+
+```bash
+kubectl get deployments -n sealos -o name | \
+  xargs -I{} kubectl rollout undo {} -n sealos
+```
+
+Verify the rollback by checking the rollout status:
+
+```bash
+kubectl rollout status deployment/desktop-frontend -n sealos
+```
+
+### Restoring database state
+
+If a cloud upgrade modifies the MongoDB or CockroachDB schema in a backward-incompatible way, you must restore from a database backup rather than using `kubectl rollout undo`. KubeBlocks manages backup schedules — check your configured `BackupRepo` for available restore points:
+
+```bash
+kubectl get backup -n sealos
+```
+
+## Important upgrade notes
+
+<AccordionGroup>
+
+<Accordion title="MongoDB AVX requirement">
+  MongoDB 6.0 requires a CPU that supports the AVX instruction set. If you are upgrading and your hardware does not support AVX, the installer falls back to MongoDB 4.4. To check whether your CPU supports AVX before upgrading:
+
+  ```bash
+  grep avx /proc/cpuinfo
+  ```
+
+  If this command returns no output, your cluster will continue to use MongoDB 4.4.
+</Accordion>
+
+<Accordion title="JWT token and password salt stability">
+  The `jwtInternal`, `jwtRegional`, `jwtGlobal`, and `passwordSalt` values in the `sealos-config` ConfigMap are generated once at install time and must never be changed in a running deployment. If these values change, all active user sessions are invalidated and all existing password hashes become invalid.
+
+  Confirm these values are preserved after an upgrade:
+
+  ```bash
+  kubectl get configmap sealos-config -n sealos-system \
+    -o jsonpath='{.data.jwtInternal}'
+  ```
+</Accordion>
+
+<Accordion title="Region UID stability">
+  The `regionUID` in `sealos-config` must remain unchanged across upgrades. Changing this value orphans all billing records associated with the previous UID.
+</Accordion>
+
+<Accordion title="CockroachDB node count">
+  The default CockroachDB deployment uses three nodes. Do not reduce this below three — CockroachDB requires a majority of nodes to be healthy for the cluster to accept writes. Reducing to one or two nodes removes fault tolerance entirely.
+</Accordion>
+
+<Accordion title="Odd number of control-plane nodes">
+  Kubernetes requires an odd number of control-plane nodes for etcd quorum. If your cluster was installed with a single control-plane node, do not add a second without also adding a third — a two-node control plane is less resilient than one.
+</Accordion>
+
+</AccordionGroup>

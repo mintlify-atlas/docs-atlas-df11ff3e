@@ -1,0 +1,212 @@
+---
+title: "Managed databases"
+description: "Production-ready PostgreSQL, MySQL, MongoDB, and Redis clusters — fully managed."
+---
+
+Sealos Managed Databases gives you a fully operational database cluster in under a minute. Sealos handles provisioning, configuration, high availability, monitoring, and automated backups — you connect and start querying.
+
+## Supported databases
+
+<CardGroup cols={2}>
+  <Card title="PostgreSQL" icon="database">
+    The world's most advanced open-source relational database. Ideal for structured data, complex queries, and applications that need ACID compliance.
+  </Card>
+  <Card title="MySQL" icon="database">
+    Powered by ApeCloud MySQL (consensus-based high availability). Suitable for web applications and any workload that expects MySQL wire compatibility.
+  </Card>
+  <Card title="MongoDB" icon="database">
+    Document-oriented NoSQL database. Best for flexible schemas, hierarchical data, and workloads with highly variable document structure.
+  </Card>
+  <Card title="Redis" icon="database">
+    In-memory data structure store. Use it for caching, session management, pub/sub messaging, and leaderboards. Deployed with Redis Sentinel for HA.
+  </Card>
+</CardGroup>
+
+Additional engines available include Kafka, Milvus, and Weaviate for specialized workloads.
+
+## Creating a database cluster
+
+<Steps>
+  <Step title="Open the database dashboard">
+    From the Sealos desktop, click **Databases**. You'll see a list of your running clusters.
+  </Step>
+  <Step title="Click Deploy Database">
+    Click **Deploy Database** in the top-right corner.
+  </Step>
+  <Step title="Select a database type">
+    Choose PostgreSQL, MySQL, MongoDB, Redis, or another supported engine.
+  </Step>
+  <Step title="Choose a version">
+    Select the major version you need. For example, PostgreSQL 14 or 16.
+  </Step>
+  <Step title="Configure resources">
+    Set CPU and memory per replica. Resources are defined in increments:
+
+    | CPU | Memory |
+    |-----|--------|
+    | 0.5 – 8 cores | 512 MiB – 32 GiB |
+
+    For Redis with high availability, Sealos deploys 3 replicas (1 primary + 2 replicas) with Sentinel.
+  </Step>
+  <Step title="Set storage">
+    Enter the storage size in GiB. This is the persistent volume allocated per replica. You can increase storage after creation.
+  </Step>
+  <Step title="Configure replicas">
+    Set the number of replicas. A single replica is suitable for development; use 2 or more for production to enable high availability.
+  </Step>
+  <Step title="Configure backups">
+    Enable automated backups and set a schedule. See the [Backup and restore](#backup-and-restore) section for details.
+  </Step>
+  <Step title="Deploy">
+    Click **Deploy Database**. The cluster moves through **Creating** → **Starting** → **Running** as Sealos provisions it.
+  </Step>
+</Steps>
+
+## Connecting from your application
+
+Once the cluster is running, open it from the dashboard and click **Connection Info** to retrieve the credentials. Sealos stores credentials in a Kubernetes secret and surfaces them as a ready-to-use connection string.
+
+### Connection string formats
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```bash
+    postgresql://username:password@hostname:5432/database
+    ```
+
+    Example using `psql`:
+
+    ```bash
+    psql "postgresql://postgres:yourpassword@my-db-postgresql.namespace.svc:5432/postgres"
+    ```
+
+    From inside Sealos (within the same namespace), use the internal hostname directly. From outside, use the external endpoint shown in the dashboard.
+  </Tab>
+  <Tab title="MySQL">
+    ```bash
+    mysql://username:password@hostname:3306/database
+    ```
+
+    Example using the MySQL CLI:
+
+    ```bash
+    mysql -h my-db-mysql.namespace.svc -P 3306 -u root -p
+    ```
+  </Tab>
+  <Tab title="MongoDB">
+    ```bash
+    mongodb://username:password@hostname:27017/database?authSource=admin
+    ```
+
+    Example using `mongosh`:
+
+    ```bash
+    mongosh "mongodb://root:yourpassword@my-db-mongodb.namespace.svc:27017/?authSource=admin"
+    ```
+  </Tab>
+  <Tab title="Redis">
+    ```bash
+    redis://:password@hostname:6379
+    ```
+
+    Example using `redis-cli`:
+
+    ```bash
+    redis-cli -h my-db-redis.namespace.svc -p 6379 -a yourpassword
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  Internal hostnames (`.svc` addresses) are only reachable from within the same Sealos workspace. Use the external endpoint shown in the dashboard when connecting from outside the cluster.
+</Note>
+
+### Connecting from an application in App Launchpad
+
+The simplest pattern is to pass the connection string as an environment variable in your App Launchpad deployment:
+
+```yaml
+DATABASE_URL: postgresql://postgres:yourpassword@my-db-postgresql.namespace.svc:5432/postgres
+```
+
+Because both your app and your database run in the same Kubernetes namespace, the internal hostname resolves without any additional network configuration.
+
+## Backup and restore
+
+Sealos supports both automatic and manual backups for PostgreSQL, MySQL, MongoDB, and Redis.
+
+### Configuring automatic backups
+
+When creating or editing a database, enable **Auto Backup** and configure:
+
+| Setting | Description |
+|---|---|
+| **Frequency** | Daily or weekly |
+| **Time** | Hour and minute (UTC) |
+| **Retention** | Number of days to keep backups |
+
+Backups use engine-native tools (`pg-basebackup` for PostgreSQL, `xtrabackup` for MySQL, `mongodump` for MongoDB, and datafile snapshots for Redis) to ensure consistency.
+
+### Creating a manual backup
+
+1. Open your database cluster.
+2. Click the **Backups** tab.
+3. Click **Create Backup**.
+4. Enter an optional remark and click **Confirm**.
+
+The backup status moves from **InProgress** → **Completed** when finished.
+
+### Restoring from a backup
+
+1. Open the **Backups** tab.
+2. Find the backup you want to restore from.
+3. Click **Restore**. Sealos creates a new database cluster from the backup, leaving your existing cluster untouched.
+
+<Warning>
+  Restoring does not overwrite the running cluster. It creates a new cluster from the selected backup point. You are responsible for migrating your application's connection string to the new cluster.
+</Warning>
+
+## Scaling database resources
+
+You can scale a running database cluster without downtime:
+
+<Steps>
+  <Step title="Open the cluster">
+    Click the database name in the dashboard.
+  </Step>
+  <Step title="Click Edit">
+    Click the **Edit** button in the top-right corner.
+  </Step>
+  <Step title="Adjust resources">
+    Change CPU, memory, storage, or replica count. Increasing storage is always safe. Reducing memory or CPU may temporarily restart pods.
+  </Step>
+  <Step title="Confirm the update">
+    Click **Update**. The cluster status changes to **Updating** during the operation and returns to **Running** when complete.
+  </Step>
+</Steps>
+
+<Tip>
+  Scale your database vertically (more CPU/memory per replica) before scaling horizontally (more replicas). Most database workloads benefit more from a larger single node than many small ones.
+</Tip>
+
+## Accessing the database UI
+
+Sealos includes a built-in web-based database client for quick inspection and ad-hoc queries:
+
+1. Open your database cluster from the dashboard.
+2. Click **Connect** → **Database UI**.
+3. A browser-based SQL or NoSQL client opens, pre-authenticated with your cluster credentials.
+
+This is useful for running one-off queries, inspecting schema, or verifying that your data looks correct after a migration — without needing to install a local database client.
+
+## Pausing a cluster
+
+To stop billing for a database cluster without deleting it:
+
+1. Open the cluster and click **Pause**.
+2. The cluster status changes to **Paused**. All pods are terminated but the persistent volumes and configuration are retained.
+3. Click **Start** to resume the cluster. It reconnects to its existing data.
+
+<Warning>
+  While paused, your database is not accessible. Make sure your application handles database connection errors gracefully before pausing a production cluster.
+</Warning>

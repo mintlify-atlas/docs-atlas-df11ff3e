@@ -1,0 +1,161 @@
+---
+title: "Self-hosting overview"
+description: "Run your own Sealos cloud on your infrastructure. Full control over data, compute, and configuration."
+---
+
+Self-hosting Sealos means deploying the complete Sealos cloud platform — desktop, controllers, frontends, and data stores — on servers you control. You get the same browser-based cloud operating system experience as the managed service, but your data stays on your infrastructure and you configure every component to fit your environment.
+
+## Architecture overview
+
+A self-hosted Sealos deployment is layered on top of a Kubernetes cluster. The installer bootstraps each layer using [cluster images](https://github.com/labring/sealos) — OCI-compliant packages that bundle Kubernetes manifests, Helm charts, and registry contents for offline delivery.
+
+```
+┌──────────────────────────────────────────────────────┐
+│                  Sealos Desktop (Browser UI)          │
+├──────────────────────────────────────────────────────┤
+│  App Launchpad │ DevBox │ Database │ Terminal │ more  │
+├──────────────────────────────────────────────────────┤
+│           Sealos Controllers & Services               │
+│  user · account · terminal · app · resources · jobs  │
+├──────────────────────────────────────────────────────┤
+│        Higress (Ingress / API Gateway)                │
+├───────────────────┬──────────────────────────────────┤
+│  KubeBlocks       │  CockroachDB  │  MongoDB         │
+│  (DB operator)    │  (billing DB) │  (auth/config)   │
+├───────────────────┴──────────────────────────────────┤
+│  cert-manager · metrics-server · OpenEBS · Cilium     │
+├──────────────────────────────────────────────────────┤
+│             Kubernetes (v1.28+)                       │
+└──────────────────────────────────────────────────────┘
+```
+
+### Component inventory
+
+The installer deploys the following components:
+
+**Infrastructure layer**
+
+| Component | Purpose |
+|---|---|
+| Kubernetes v1.28 | Container orchestration runtime |
+| Cilium | eBPF-based CNI (kube-proxy replacement) |
+| cert-manager | Automated TLS certificate issuance |
+| OpenEBS | Local PV provisioner for stateful workloads |
+| Higress | Ingress controller and API gateway |
+| metrics-server | Resource usage metrics for the scheduler |
+| VictoriaMetrics | Cluster-wide monitoring and alerting stack |
+
+**Data layer**
+
+| Component | Purpose |
+|---|---|
+| MongoDB 6.0 (or 4.4) | Authentication, app config, and workspace metadata |
+| CockroachDB v23.1 | Billing ledger (local and global databases) |
+| KubeBlocks | Kubernetes operator for user-facing databases |
+
+**Sealos cloud layer**
+
+| Component | Purpose |
+|---|---|
+| `sealos-cloud-desktop-frontend` | Browser-based desktop UI |
+| `sealos-cloud-terminal-frontend` | In-browser web terminal |
+| `sealos-cloud-applaunchpad-frontend` | App deployment interface |
+| `sealos-cloud-dbprovider-frontend` | Database management UI |
+| `sealos-cloud-costcenter-frontend` | Billing and usage dashboard |
+| `sealos-cloud-template-frontend` | One-click app templates |
+| `sealos-cloud-cronjob-frontend` | Scheduled job management |
+| `sealos-cloud-user-controller` | User and workspace reconciliation |
+| `sealos-cloud-account-controller` | Billing and quota enforcement |
+| `sealos-cloud-terminal-controller` | Ephemeral terminal provisioning |
+| `sealos-cloud-app-controller` | Application lifecycle management |
+| `sealos-cloud-resources-controller` | Resource metering |
+| `sealos-cloud-database-service` | Database provisioning service |
+| `sealos-cloud-account-service` | Account API service |
+| `sealos-cloud-launchpad-service` | Launchpad backend service |
+
+## Hardware requirements
+
+These are the minimum and recommended specifications for each server in your cluster.
+
+<Tabs>
+  <Tab title="Single node (test/dev)">
+    | Resource | Minimum | Recommended |
+    |---|---|---|
+    | CPU | 4 cores | 8 cores |
+    | RAM | 8 GB | 16 GB |
+    | Disk | 100 GB SSD | 200 GB SSD |
+    | Network | 1 Gbps | 1 Gbps |
+
+    <Warning>
+      Single-node deployments are suitable for evaluation and development only. They have no high-availability guarantees and should not be used for production workloads.
+    </Warning>
+  </Tab>
+  <Tab title="Multi-node (production)">
+    | Resource | Control plane (per node) | Worker node (per node) |
+    |---|---|---|
+    | CPU | 4 cores | 8+ cores |
+    | RAM | 16 GB | 32 GB |
+    | Disk | 100 GB SSD | 200 GB SSD |
+    | Network | 1 Gbps | 1 Gbps |
+
+    For production deployments, use an odd number of control-plane nodes (3 or 5) to maintain etcd quorum. Worker node count depends on your expected tenant workload.
+  </Tab>
+</Tabs>
+
+<Note>
+  The installer skips kube-proxy and uses Cilium in its place. Cilium requires a Linux kernel version of 4.19.57 or later (or equivalent, for example 4.18 on RHEL 8).
+</Note>
+
+## Supported operating systems
+
+Sealos is tested on and supports the following operating systems:
+
+- Ubuntu 20.04 LTS (x86_64)
+- Ubuntu 22.04 LTS (x86_64 and ARM64)
+- Debian 11 / 12 (x86_64)
+- CentOS 7 / Rocky Linux 8 / RHEL 8 (x86_64)
+
+All nodes must run `systemd` and have `iptables` installed. For multi-node clusters, all nodes must be reachable by SSH from the machine running the installer, and SSH login must use a consistent password or key pair across all nodes.
+
+<Tip>
+  The sealos binary supports both `amd64` (`x86_64`) and `arm64` (`aarch64`) architectures. ARM64 cluster images are available for Kubernetes v1.20 and later.
+</Tip>
+
+## Kubernetes version support
+
+The installer ships Kubernetes **v1.28.15** by default. The version is configurable via the `--kubernetes-version` flag or the `SEALOS_V2_CLI_VERSION` environment variable. Sealos has been tested with Kubernetes v1.24 through v1.28.
+
+## When to self-host
+
+<CardGroup cols={2}>
+  <Card title="Use managed cloud" icon="cloud">
+    You want the fastest path to deploying apps. No infrastructure setup, automatic updates, and global regions available at [sealos.io](https://os.sealos.io).
+  </Card>
+  <Card title="Self-host Sealos" icon="server">
+    Your data residency, compliance, or air-gap requirements demand on-premises infrastructure. You want full control over cluster configuration, component versions, and the ingress domain.
+  </Card>
+</CardGroup>
+
+Self-hosting is the right choice when you:
+
+- Operate in a regulated industry (healthcare, finance, government) with strict data sovereignty requirements
+- Need to run Sealos in an air-gapped or private network where internet access is limited or prohibited
+- Want to integrate Sealos with an existing on-premises Kubernetes cluster or internal identity provider
+- Require custom resource quota defaults or billing logic not available in the managed service
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="wrench" href="/self-hosting/installation">
+    Step-by-step guide to deploying Sealos on your own servers.
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/self-hosting/configuration">
+    Configure your domain, TLS, databases, and authentication providers.
+  </Card>
+  <Card title="Upgrading" icon="arrow-up-circle" href="/self-hosting/upgrade">
+    Keep your self-hosted Sealos deployment up to date.
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Learn the Sealos desktop interface after your cluster is up.
+  </Card>
+</CardGroup>

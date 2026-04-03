@@ -1,0 +1,123 @@
+---
+title: "Workspaces"
+description: "Workspaces are isolated environments for teams. Manage access, resources, and billing per workspace."
+---
+
+A workspace is the fundamental unit of isolation in Sealos. Every application you deploy, database you create, and Devbox environment you run lives inside a workspace. Under the hood, each workspace maps directly to a Kubernetes namespace, giving you the full isolation guarantees of Kubernetes without the complexity of managing namespaces yourself.
+
+When you first sign up, Sealos creates a personal workspace for you automatically. You can create additional workspaces to separate concerns — for example, one workspace per project, per team, or per environment.
+
+## What a workspace contains
+
+Everything in Sealos is scoped to a workspace:
+
+<CardGroup cols={2}>
+  <Card title="Applications" icon="rocket">
+    App Launchpad deployments, exposed ingress routes, and environment variables are all workspace-scoped.
+  </Card>
+  <Card title="Databases" icon="database">
+    Managed PostgreSQL, MySQL, MongoDB, and Redis instances belong to a specific workspace.
+  </Card>
+  <Card title="Devbox environments" icon="code">
+    Cloud IDE environments are tied to the workspace they were created in.
+  </Card>
+  <Card title="Billing" icon="credit-card">
+    Cost tracking, resource consumption, and subscription plans are tracked per workspace.
+  </Card>
+</CardGroup>
+
+## Creating a workspace
+
+<Steps>
+  <Step title="Open the workspace switcher">
+    In the Sealos desktop, click the workspace name shown in the top-left corner of the screen. A dropdown opens listing all workspaces you belong to.
+  </Step>
+  <Step title="Create a new workspace">
+    Click **New Workspace**. Enter a display name for your workspace — this is the human-readable label shown in the UI.
+  </Step>
+  <Step title="Confirm creation">
+    Click **Create**. Sealos provisions a new Kubernetes namespace and associates it with your account. The namespace name is derived from your user ID and follows the pattern `ns-<user-uid>` for personal workspaces, or a generated identifier for shared workspaces.
+  </Step>
+</Steps>
+
+<Note>
+  Workspace names must be unique within a region. Choose names that reflect their purpose, such as `team-frontend`, `project-alpha-prod`, or `data-engineering`.
+</Note>
+
+## Inviting team members and setting roles
+
+Sealos uses a role-based model to control what members can do inside a workspace. Three roles are available:
+
+| Role | Description |
+|------|-------------|
+| **Owner** | Full control — can manage members, delete the workspace, and change billing settings. Each workspace has exactly one Owner. |
+| **Manager** | Can deploy and manage applications, databases, and Devboxes. Can invite Developer-level members but cannot delete the workspace or transfer ownership. |
+| **Developer** | Can deploy and manage their own applications and use shared resources. Cannot invite other members or change workspace settings. |
+
+### Inviting a member
+
+<Steps>
+  <Step title="Open workspace settings">
+    From the workspace dropdown, click the gear icon next to the workspace name to open its settings panel.
+  </Step>
+  <Step title="Go to the Members tab">
+    Select the **Members** tab to see all current members and their roles.
+  </Step>
+  <Step title="Send an invitation">
+    Click **Invite Member**, enter the invitee's Sealos username or registered email address, and select the role you want to assign — Owner, Manager, or Developer.
+  </Step>
+  <Step title="Confirm">
+    Click **Send Invite**. The invitee receives a notification and can accept the invitation from their own desktop.
+  </Step>
+</Steps>
+
+### Changing a member's role
+
+Owners and Managers can update roles through an `OperationRequest`. The system processes these requests as Kubernetes custom resources — granting (`Grant`), updating (`Update`), or revoking (`Deprive`) access atomically.
+
+<Warning>
+  Transferring the Owner role to another user is permanent unless the new Owner reassigns it back. There is always exactly one Owner per workspace.
+</Warning>
+
+## Switching between workspaces
+
+Click the workspace name in the top-left corner of the Sealos desktop at any time. The dropdown lists all workspaces you are a member of, along with your role in each. Selecting a workspace switches the entire UI context — all app lists, databases, and cost views update to reflect the selected workspace.
+
+You can be a member of multiple workspaces simultaneously, and switching between them does not affect running workloads.
+
+## Resource limits and quotas
+
+Each workspace operates under a resource quota that limits the total amount of CPU, memory, and storage it can consume. Quotas prevent any single workspace from monopolizing cluster resources and help you forecast costs.
+
+You can view your workspace's current quota and consumption from the **Cost Center** application. The quota covers:
+
+- **CPU** — measured in cores (e.g., 4 vCPU)
+- **Memory** — measured in gibibytes (e.g., 8 GiB)
+- **Storage** — persistent volume capacity across all applications
+- **Network egress** — outbound traffic included in subscription plans
+
+<Tip>
+  If your workload requires more resources than the default quota allows, upgrade your workspace subscription plan. Plans are available on monthly or yearly billing cycles and can be changed at any time from the Cost Center.
+</Tip>
+
+Workspace subscription plans can be created, upgraded, downgraded, canceled, or renewed. When you upgrade mid-period, Sealos calculates a prorated amount for the remainder of the billing cycle.
+
+## Deleting a workspace
+
+Deleting a workspace permanently removes all resources inside it, including applications, databases, and storage volumes. This action cannot be undone.
+
+<Steps>
+  <Step title="Remove all running resources">
+    Stop and delete all applications, databases, and Devbox environments within the workspace. This prevents orphaned billing records.
+  </Step>
+  <Step title="Open workspace settings">
+    Click the gear icon next to the workspace in the workspace dropdown.
+  </Step>
+  <Step title="Delete the workspace">
+    Scroll to the **Danger Zone** section and click **Delete Workspace**. Confirm by typing the workspace name when prompted.
+  </Step>
+</Steps>
+
+<Warning>
+  Only the workspace Owner can delete a workspace. Deletion stops all running workloads immediately and is irreversible. Ensure you have exported any data you need before proceeding.
+</Warning>

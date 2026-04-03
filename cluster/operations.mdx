@@ -1,0 +1,357 @@
+---
+title: "Cluster operations"
+description: "Day-2 operations: scaling nodes, renewing certificates, upgrades, and troubleshooting."
+---
+
+This page covers routine operational tasks you perform after a cluster is up and running: scaling the node pool, maintaining certificates, running commands across nodes, upgrading Kubernetes, and diagnosing common problems.
+
+---
+
+## Adding worker nodes
+
+Scale out the cluster by joining new worker nodes at any time without downtime.
+
+```bash
+# Add a single worker node
+sealos add --nodes 192.168.0.10
+
+# Add multiple workers at once
+sealos add --nodes 192.168.0.10,192.168.0.11,192.168.0.12
+
+# Add a range of worker nodes
+sealos add --nodes 192.168.0.10-192.168.0.20
+
+# Use a non-default SSH password for the new nodes
+sealos add --nodes 192.168.0.10 --passwd 'new-node-password'
+```
+
+After the command completes, verify the new nodes have joined:
+
+```bash
+sealos exec "kubectl get nodes -o wide"
+```
+
+<Note>
+  All nodes in a single `sealos add` call must share the same SSH credentials.
+  Run separate `sealos add` commands if different machines use different passwords
+  or keys.
+</Note>
+
+---
+
+## Removing nodes gracefully
+
+<Warning>
+  `sealos delete` removes nodes from the cluster permanently. Kubernetes workloads
+  running on the deleted nodes are evicted. Ensure sufficient capacity remains on
+  other nodes before removing. If you accidentally remove a node, you can re-add
+  it with `sealos add`.
+</Warning>
+
+Sealos prompts for confirmation before deleting nodes. Pass `--force` to skip the prompt in automation pipelines.
+
+```bash
+# Remove a single worker node (confirmation required)
+sealos delete --nodes 192.168.0.10
+
+# Remove multiple workers
+sealos delete --nodes 192.168.0.10,192.168.0.11
+
+# Remove without confirmation (for scripted use)
+sealos delete --nodes 192.168.0.10 --force
+```
+
+To remove a master node from an HA cluster:
+
+```bash
+sealos delete --masters 192.168.64.20
+```
+
+<Warning>
+  Never reduce the master count below three in a production HA cluster, or below
+  one in any cluster. Removing the last master destroys the control plane.
+</Warning>
+
+---
+
+## Certificate management
+
+### 99-year certificates
+
+Sealos generates cluster certificates with a 99-year validity period by default, eliminating the annual certificate rotation burden that standard `kubeadm` clusters impose.
+
+### Adding SANs to the API server certificate
+
+When you add a new public IP address or domain name through which the API server will be reached (for example, a cloud load balancer EIP or a new DNS record), add it as a Subject Alternative Name:
+
+```bash
+sealos cert --alt-names 39.105.169.253
+```
+
+Add multiple SANs in a single invocation:
+
+```bash
+sealos cert --alt-names sealos.io,39.105.169.253,10.103.97.2
+```
+
+Target a specific cluster:
+
+```bash
+sealos cert -c production --alt-names api.prod.example.com
+```
+
+<Note>
+  After `sealos cert` completes you must restart the `kube-apiserver` static pod
+  on each master for the new certificate to be served. The quickest way is to
+  move the static pod manifest temporarily:
+
+  ```bash
+  sealos exec -r master \
+    "mv /etc/kubernetes/manifests/kube-apiserver.yaml /tmp/ && sleep 5 && \
+     mv /tmp/kube-apiserver.yaml /etc/kubernetes/manifests/"
+  ```
+</Note>
+
+### Verify a certificate
+
+```bash
+openssl x509 -noout -text -in /etc/kubernetes/pki/apiserver.crt \
+  | grep -A5 "Subject Alternative Name"
+```
+
+### Update kubeconfig after adding a SAN
+
+If you added a public IP so that external `kubectl` clients can reach the cluster, update the server field in `~/.kube/config`:
+
+```yaml
+clusters:
+- cluster:
+    server: https://39.105.169.253:6443
+  name: default
+```
+
+---
+
+## Running commands across nodes
+
+`sealos exec` runs a shell command in parallel on all nodes (or a filtered subset) over SSH. Output from each node is returned to your terminal.
+
+```bash
+# Run on every node in the default cluster
+sealos exec "uptime"
+
+# Target a named cluster
+sealos exec -c production "uptime"
+
+# Run only on master nodes
+sealos exec -r master "kubectl get componentstatuses"
+
+# Run only on worker nodes
+sealos exec -r node "crictl ps"
+
+# Run on specific IPs
+sealos exec --ips 192.168.0.2,192.168.0.3 "journalctl -u kubelet --no-pager -n 50"
+```
+
+**Useful exec one-liners:**
+
+```bash
+# Check kubelet status on all nodes
+sealos exec "systemctl status kubelet --no-pager"
+
+# View disk usage on all nodes
+sealos exec "df -h"
+
+# Check container runtime on all nodes
+sealos exec "crictl info | grep -i runtime"
+
+# Drain a node before maintenance (run from a master)
+sealos exec -r master "kubectl drain 192.168.0.10 --ignore-daemonsets --delete-emptydir-data"
+```
+
+---
+
+## Backup and restore
+
+### etcd backup
+
+Back up etcd on a schedule to protect cluster state. Run this from any master:
+
+```bash
+sealos exec -r master \
+  "etcdctl snapshot save /var/backups/etcd/snapshot-$(date +%Y%m%d-%H%M%S).db \
+     --endpoints=https://127.0.0.1:2379 \
+     --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+     --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \
+     --key=/etc/kubernetes/pki/etcd/healthcheck-client.key"
+```
+
+Copy the snapshot off the node immediately after creating it:
+
+```bash
+sealos scp -r master \
+  "/var/backups/etcd/snapshot-*.db" \
+  /local/backup/path/
+```
+
+### Verify a snapshot
+
+```bash
+etcdctl snapshot status /path/to/snapshot.db --write-out=table
+```
+
+### etcd restore
+
+Restoring etcd requires stopping the control plane on all masters, restoring the data directory from the snapshot, and restarting. Consult the [official etcd disaster recovery guide](https://etcd.io/docs/latest/op-guide/recovery/) for the complete procedure.
+
+<Tip>
+  Automate backups with a CronJob running inside the cluster, or with a cron job
+  on the master nodes. Aim for at least daily backups in production, hourly for
+  critical workloads.
+</Tip>
+
+---
+
+## Upgrading Kubernetes
+
+Kubernetes upgrades in Sealos are performed by running the new version's cluster image. The image carries the updated binaries and configuration templates.
+
+<Steps>
+  <Step title="Pull the target version image">
+    ```bash
+    sealos pull labring/kubernetes:v1.26.0-4.3.0
+    ```
+  </Step>
+
+  <Step title="Run the upgrade">
+    Pass the new image to `sealos run` on the existing cluster. Sealos detects
+    that the cluster already exists and performs an in-place upgrade rather than
+    a fresh installation:
+
+    ```bash
+    sealos run labring/kubernetes:v1.26.0-4.3.0
+    ```
+
+    <Warning>
+      Skip-version upgrades (e.g. v1.24 → v1.26 directly) are not supported by
+      Kubernetes. Always upgrade one minor version at a time: v1.24 → v1.25 →
+      v1.26.
+    </Warning>
+  </Step>
+
+  <Step title="Verify all nodes have upgraded">
+    ```bash
+    sealos exec "kubectl get nodes -o wide"
+    ```
+
+    All nodes should report the new Kubernetes version under the `VERSION` column.
+  </Step>
+
+  <Step title="Check component health">
+    ```bash
+    sealos status
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Troubleshooting common issues
+
+<AccordionGroup>
+
+<Accordion title="Node shows NotReady after joining">
+  Check kubelet logs on the affected node:
+
+  ```bash
+  sealos exec --ips 192.168.0.10 "journalctl -u kubelet -n 100 --no-pager"
+  ```
+
+  Common causes:
+  - Container runtime not running: `systemctl status containerd`
+  - Network plugin not ready: check CNI pod logs with `kubectl logs -n kube-system -l k8s-app=calico-node`
+  - DNS resolution failure between nodes — verify all nodes can reach each other by IP
+</Accordion>
+
+<Accordion title="sealos run fails with SSH connection refused">
+  Sealos connects to nodes over SSH. Confirm:
+
+  ```bash
+  # Test SSH connectivity manually
+  ssh -i ~/.ssh/id_rsa -p 22 user@192.168.0.2 "echo ok"
+  ```
+
+  - The SSH daemon is running on the target nodes
+  - The port matches what you pass to `--port`
+  - The user has passwordless sudo (or you are authenticating as root)
+  - Host-based firewall rules allow inbound SSH
+</Accordion>
+
+<Accordion title="API server unreachable after adding a SAN">
+  After `sealos cert`, the static pod must be restarted before the new certificate is served:
+
+  ```bash
+  sealos exec -r master \
+    "mv /etc/kubernetes/manifests/kube-apiserver.yaml /tmp/ && sleep 10 && \
+     mv /tmp/kube-apiserver.yaml /etc/kubernetes/manifests/"
+  ```
+
+  Then update the server address in `~/.kube/config` to match the new SAN you added.
+</Accordion>
+
+<Accordion title="etcd cluster has no leader">
+  This usually means a majority of etcd members are unreachable. Check etcd status on each master:
+
+  ```bash
+  sealos exec -r master \
+    "etcdctl endpoint health \
+       --endpoints=https://127.0.0.1:2379 \
+       --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+       --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \
+       --key=/etc/kubernetes/pki/etcd/healthcheck-client.key"
+  ```
+
+  If fewer than half the members are healthy, restore from an etcd snapshot.
+</Accordion>
+
+<Accordion title="sealos reset appears to hang">
+  `reset` SSH-es into each node and runs cleanup. If a node is unreachable, the command waits. Use `--force` to skip unreachable nodes:
+
+  ```bash
+  sealos reset --force
+  ```
+
+  <Warning>
+    `--force` skips graceful cleanup on unreachable nodes. You may need to wipe
+    those nodes manually to reuse them.
+  </Warning>
+</Accordion>
+
+<Accordion title="Image pull fails in air-gapped environment">
+  Ensure you loaded the offline tar archives before running:
+
+  ```bash
+  sealos run kubernetes.tar calico.tar \
+    --masters 192.168.0.2 \
+    --nodes 192.168.0.3
+  ```
+
+  If you are using `sealos run` with image names (not tar paths) in an air-gapped environment, the local registry built into Sealos must already contain the images. Pull and save them on an internet-connected machine first, transfer the archives, then load with `sealos run <archive>.tar`.
+</Accordion>
+
+<Accordion title="Pods stuck in Pending on worker nodes">
+  Check for resource pressure and CNI readiness:
+
+  ```bash
+  # Describe the pending pod for event details
+  sealos exec -r master "kubectl describe pod <pod-name> -n <namespace>"
+
+  # Check node resource capacity
+  sealos exec "kubectl describe node <node-name> | grep -A5 Allocatable"
+
+  # Check CNI plugin pods
+  sealos exec -r master "kubectl get pods -n kube-system -o wide"
+  ```
+</Accordion>
+
+</AccordionGroup>
